@@ -100,6 +100,11 @@ _styleColors = {
 	"errorColor" : (255, 85, 85),
 	"animatedColor" : (128, 152, 94),
 
+	"foregroundError" : ( 196, 80, 80 ),
+	"foregroundWarning" : ( 239, 129, 24 ),
+	"foregroundInfo" : ( 128, 179, 254 ),
+	"foregroundDebug" : ( 163, 163, 163 ),
+
 	# Controls and other UI elements may have to sit on a variety of background
 	# colors and as such should make use of the $tint* colors for tonal
 	# variation. This should be in preference to using $background* colors
@@ -120,7 +125,8 @@ _themeVariables = {
 	"roundedCornerRadius" : "6px",
 	"widgetCornerRadius" : "4px",
 	"controlCornerRadius" : "2px",
-	"toolOverlayInset" : "44px"
+	"toolOverlayInset" : "44px",
+	"monospaceFontFamily" : '"SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace'
 }
 
 substitutions = {
@@ -341,7 +347,7 @@ _styleSheet = string.Template(
 	}
 
 	QPlainTextEdit[gafferRole="Code"] {
-		font-family: monospace;
+		font-family: $monospaceFontFamily;
 	}
 
 	QLineEdit:focus, QPlainTextEdit[readOnly="false"]:focus, QLineEdit[gafferHighlighted="true"] {
@@ -945,7 +951,8 @@ _styleSheet = string.Template(
 		image : url($GAFFER_ROOT/graphics/collapsibleArrowDown.png);
 	}
 
-	/* checkbox */
+	/* CheckBoxes */
+	/* ========== */
 
 	QCheckBox::indicator {
 		width: 20px;
@@ -953,6 +960,9 @@ _styleSheet = string.Template(
 		background-color: transparent;
 		border-radius: 2px;
 	}
+
+	/* Unchecked */
+	/* --------- */
 
 	QCheckBox::indicator:unchecked {
 		image: url($GAFFER_ROOT/graphics/checkBoxUnchecked.png);
@@ -963,23 +973,47 @@ _styleSheet = string.Template(
 	QCheckBox[gafferHighlighted="true"]::indicator:unchecked {
 		image: url($GAFFER_ROOT/graphics/checkBoxUncheckedHover.png);
 	}
+
+	QCheckBox::indicator:unchecked:disabled {
+		image: url($GAFFER_ROOT/graphics/checkBoxUncheckedDisabled.png);
+	}
+
+	/* Checked */
+	/* ------- */
+
+	QCheckBox::indicator:checked {
+		image: url($GAFFER_ROOT/graphics/checkBoxChecked.png);
+	}
+
 	QCheckBox::indicator:checked:hover,
 	QCheckBox::indicator:checked:focus,
 	QCheckBox[gafferHighlighted="true"]::indicator:checked {
 		image: url($GAFFER_ROOT/graphics/checkBoxCheckedHover.png);
 	}
 
-	QCheckBox::indicator:checked {
-		image: url($GAFFER_ROOT/graphics/checkBoxChecked.png);
-	}
-
 	QCheckBox::indicator:checked:disabled {
 		image: url($GAFFER_ROOT/graphics/checkBoxCheckedDisabled.png);
 	}
 
-	QCheckBox::indicator:unchecked:disabled {
-		image: url($GAFFER_ROOT/graphics/checkBoxUncheckedDisabled.png);
+	/* Indeterminate */
+	/* ------------- */
+
+	QCheckBox::indicator:indeterminate {
+		image: url($GAFFER_ROOT/graphics/checkBoxIndeterminate.png);
 	}
+
+	QCheckBox::indicator:indeterminate:hover,
+	QCheckBox::indicator:indeterminate:focus,
+	QCheckBox[gafferHighlighted="true"]::indicator:indeterminate {
+		image: url($GAFFER_ROOT/graphics/checkBoxIndeterminateHover.png);
+	}
+
+	QCheckBox::indicator:indeterminate:disabled {
+		image: url($GAFFER_ROOT/graphics/checkBoxIndeterminateDisabled.png);
+	}
+
+	/* Animated/Errored */
+	/* ---------------- */
 
 	QCheckBox[gafferAnimated="true"]::indicator {
 		background-color: $animatedColor;
@@ -989,7 +1023,11 @@ _styleSheet = string.Template(
 		background-color: $errorColor;
 	}
 
-	/* boolwidget drawn as switch */
+	/* BoolWidget drawn as switch */
+	/* ========================== */
+
+	/* Unchecked */
+	/* --------- */
 
 	QCheckBox[gafferDisplayMode="Switch"]::indicator:unchecked {
 		image: url($GAFFER_ROOT/graphics/toggleOff.png);
@@ -1000,25 +1038,47 @@ _styleSheet = string.Template(
 	QCheckBox[gafferDisplayMode="Switch"][gafferHighlighted="true"]::indicator:unchecked {
 		image: url($GAFFER_ROOT/graphics/toggleOffHover.png);
 	}
+
+	QCheckBox[gafferDisplayMode="Switch"]::indicator:unchecked:disabled {
+		image: url($GAFFER_ROOT/graphics/toggleOffDisabled.png);
+	}
+
+	/* Checked */
+	/* ------- */
+
+	QCheckBox[gafferDisplayMode="Switch"]::indicator:checked {
+		image: url($GAFFER_ROOT/graphics/toggleOn.png);
+	}
+
 	QCheckBox[gafferDisplayMode="Switch"]::indicator:checked:hover,
 	QCheckBox[gafferDisplayMode="Switch"]::indicator:checked:focus,
 	QCheckBox[gafferDisplayMode="Switch"][gafferHighlighted="true"]::indicator:checked {
 		image: url($GAFFER_ROOT/graphics/toggleOnHover.png);
 	}
 
-	QCheckBox[gafferDisplayMode="Switch"]::indicator:checked {
-		image: url($GAFFER_ROOT/graphics/toggleOn.png);
-	}
-
 	QCheckBox[gafferDisplayMode="Switch"]::indicator:checked:disabled {
 		image: url($GAFFER_ROOT/graphics/toggleOnDisabled.png);
 	}
 
-	QCheckBox[gafferDisplayMode="Switch"]::indicator:unchecked:disabled {
-		image: url($GAFFER_ROOT/graphics/toggleOffDisabled.png);
+	/* Indeterminate */
+	/* ------------- */
+
+	QCheckBox[gafferDisplayMode="Switch"]::indicator:indeterminate {
+		image: url($GAFFER_ROOT/graphics/toggleIndeterminate.png);
 	}
 
-	/* boolwidget drawn as tool */
+	QCheckBox[gafferDisplayMode="Switch"]::indicator:indeterminate:hover,
+	QCheckBox[gafferDisplayMode="Switch"]::indicator:indeterminate:focus,
+	QCheckBox[gafferDisplayMode="Switch"][gafferHighlighted="true"]::indicator:indeterminate {
+		image: url($GAFFER_ROOT/graphics/toggleIndeterminateHover.png);
+	}
+
+	QCheckBox[gafferDisplayMode="Switch"]::indicator:indeterminate:disabled {
+		image: url($GAFFER_ROOT/graphics/toggleIndeterminateDisabled.png);
+	}
+
+	/* BoolWidget drawn as tool */
+	/* ======================== */
 
 	QCheckBox {
 		border-radius: 5px;
@@ -1138,6 +1198,20 @@ _styleSheet = string.Template(
 
 	_TableView QHeaderView::section:vertical {
 		padding: 2px;
+	}
+
+	*[gafferClass="GafferUI.MessageWidget._MessageTableView"] {
+		font-family: $monospaceFontFamily;
+		background-color: $background;
+		border: 1px solid $backgroundHighlight;
+		border-top-color: $backgroundLowlight;
+		border-left-color: $backgroundLowlight;
+		padding: 0;
+	}
+
+	*[gafferClass="GafferUI.MessageWidget.MessageSummaryWidget"] QPushButton {
+		padding-left: 4px;
+		padding-right: 4px;
 	}
 
 	/* checkboxes within table views */

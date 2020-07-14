@@ -580,6 +580,9 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		self.assertEqual( items[1][1].getName(), "b" )
 		self.assertEqual( items[2][1].getName(), "c" )
 
+		for item in items :
+			self.assertIsInstance( item[0], str )
+
 	def testIndexByIndex( self ) :
 
 		g = Gaffer.GraphComponent()
@@ -730,6 +733,7 @@ class GraphComponentTest( GafferTest.TestCase ) :
 				"GafferDispatch::TaskSwitch",
 				"GafferDispatch::Wedge",
 				"GafferDispatch::FrameMask",
+				"IECorePreview::MessagesData"
 			] )
 		)
 		self.assertTypeNamesArePrefixed( GafferTest )

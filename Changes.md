@@ -1,28 +1,90 @@
 0.58.x.x
 ========
 
+Features
+--------
+
+- InteractiveRender : Added message log to the node's UI, displaying output from the last render (#3419).
+
 Improvements
 ------------
 
+- Caching : Improved interactive performance using an improved hash cache invalidation strategy.
 - SceneNode : Improved performance for all nodes that must propagate bounds from children to parents.
 - PointsType : Removed unnecessary bounds computation overhead.
 - OSLObject/ClosestPointSampler/CurveSampler : Improved performance for cases where multiple downstream computes require the same upstream object.
 - Stats app : Added `-location` argument, to allow profiling of a single location in a scene.
 - AnimationEditor : Improved performance.
+- MessageWidget : Added alternate presentation options allowing log-style message display, search, etc.
+- Viewer : Added warning/error message count to Render Control overlay.
+
+Fixes
+-----
+
+- ImageReader/ImageWriter : Fixed handling of errors in Python functions registered using `setDefaultColorSpaceFunction()`.
+- StyleSheet : Fixed monospace font stack.
+- GafferUI : Fixed lingering highlight state if a Button was disabled whilst the cursor was over it.
+- Signal : Fixed hang which could occur if a result combiner implemented in Python tried to handle exceptions.
+- NumericWidget : Fixed errors when trying to use a virtual slider with an empty value.
+- GraphComponent : Fixed return value for `items()` method. The returned keys are now regular `str()` objects rather than `InternedString`.
+- Fixed dependency tracking bugs in the following nodes :
+  - UDIMQuery
+  - Shader
+  - FilterResults
+  - FreezeTransform
+  - ImageMetadata
+  - FlatImageProcessor
+  - FlatToDeep
+  - OpenImageIOReader
+  - LevelSetOffset
+  - MeshToLevelSet
+- SetAlgo : Fixed `affectsSetExpression()` to return `True` for `ScenePlug::setNamesPlug()`.
+- GafferTractor: Fixed evaluation of 'tag' and 'service' plugs on Task nodes. Previously, these plugs were evaluated in the default context, which prevented one from using custom context variables (e.g. from Wedge node) to compute tags or service keys dynamically.
+
 
 API
 ---
 
+- ValuePlug
+  - Improved interactive performance by not clearing the entire hash cache every time a plug is dirtied. Beware : this can reveal subtle bugs in `DependencyNode::affects()` implementations, causing hashes to be reused if a plug has not been dirtied appropriately. These bugs may previously have gone unnoticed but will now need fixing as a matter of urgency. The GAFFER_CLEAR_HASHCACHE_ON_DIRTY environment variable may be used to enable legacy behaviour in the interim.
+  - Added `clearHashCache()` static method.
 - ScenePlug : Added `childBounds()` and `childBoundsHash()` methods.
 - ObjectProcessor : Added `processedObjectComputeCachePolicy()` virtual method. This should be overridden to choose an appropriate cache policy when `computeProcessedObject()` spawns TBB tasks.
 - SceneNode :
   - Deprecated `hashOfTransformedChildBounds()`. Use `ScenePlug::childBoundsHash()` instead.
   - Deprecated `unionOfTransformedChildBounds()`. Use `ScenePlug::childBounds()` instead.
 - IECorePreview::Renderer : Added optional message handler to renderer construction to allow output message streams to be re-directed if required (#3419).
+- InteractiveRender :
+  - Changed base to `Gaffer::ComputeNode` (#3419).
+  - Added messages plug containing the output of the node's renderer output (#3419).
+- Graphics : Renamed `errorNotificationSmall` icon to `errorSmall`.
+- NotificationMessageHandler : Constructor now accepts `GafferUI.MessageWidget` constructor kwargs to configure the widget.
+- PlugValueWidget : Added the capability to edit more than one plug at a time.
+  - Added `setPlugs()` and `getPlugs()` methods. The previous `setPlug()` and `getPlug()` methods remain as a convenience.
+  - Derived classes should now override `setPlugs()` rather than `setPlug()`, but backwards compatibility is preserved for classes which have not been converted yet.
+  - Derived classes should now implement `_updateFromPlugs()` rather than `_updateFromPlug()`, but backwards compatibility is preserved for classes which have not been converted yet.
+  - `create()` now optionally accepts a list of plugs in place of a single plug.
+  - Updated the following subclasses to fully support multiple plugs :
+    - NumericPlugValueWidget
+    - CompoundNumericPlugValueWidget
+    - ColorSwatchPlugValueWidget
+    - ColorPlugValueWidget
+    - StringPlugValueWidget
+    - TweakPlugValueWidget
+    - BoolPlugValueWidget
+    - PresetsPlugValueWidget
+- SetAlgo : Added Python binding for `affectsSetExpression()`.
+- Shader : Added `affectsAttributes()` protected method.
+- MessageWidget : Added MessageSummaryWidget class to simplify the display of message counts in other UIs.
+- MessageWidget :
+  - Added MessageSummaryWidget class to simplify the display of message counts in other UIs.
+  - Added `scrollToNextMessage()` and `scrollToPreviousMessage()` methods.
 
 Breaking Changes
 ----------------
 
+- Filter : Removed virtual `sceneAffectsMatch()` method. Derived classes should implement `affects()` instead.
+- FilterPlug : Replaced `sceneAffectsMatch()` method with a more general `sceneAffects()` method. This should be used to replace any calls to the old method.
 - PointsType : Changed base class from Deformer to ObjectProcessor.
 - Gaffer : Removed `lazyImport()` method.
 - GafferUI : Removed deprecated `_qtImport()` method. Use `from Qt import` instead.
@@ -50,11 +112,61 @@ Breaking Changes
 - RecursiveChildIterator : Changed private member data. Source compatibility is maintained.
 - IECorePreview::Renderer : Changed signature for `create` and `registerType` to include optional message handler.
 - ObjectProcessor : Added a virtual method.
+- PlugValueWidget :
+  - Renamed `create()` argument from `plug` to `plugs`. A single plug may still be passed.
+  - Renamed constructor argument from `plug` to `plugs`. A single plug may still be passed. The same applies to the constructors for the following subclasses :
+    - NumericPlugValueWidget
+    - CompoundNumericPlugValueWidget
+    - ColorSwatchPlugValueWidget
+    - ColorPlugValueWidget
+    - StringPlugValueWidget
+    - TweakPlugValueWidget
+    - BoolPlugValueWidget
+    - PresetsPlugValueWidget
+  - Removed connections to `plugFlagsChangedSignal()`. In the unlikely event that a derived class depends on plug flags, it must now manage the updates itself.
+- InteractiveRender : Changed base class from Node to ComputeNode, added members.
+- MessageWidget : Removed deprecated `appendMessage` method, use `messageHandler().handle()` instead.
+- Shader : Added virtual method.
 
 Build
 -----
 
-- Updated to GafferHQ/dependencies 1.4.0.
+- Updated to GafferHQ/dependencies 1.6.0.
+
+========
+0.57.x.x (relative to 0.57.5.0)
+========
+
+Fixes
+-----
+
+- SceneAlgo : Removed cancellers from contexts referenced by history objects.
+- Context : Fixed Python `Canceller` lifetime management bug.
+
+API
+---
+
+- Context : Added copy constructor that allows an existing canceller to be omitted.
+
+0.57.5.0 (relative to 0.57.4.1)
+========
+
+Improvements
+------------
+
+- ArnoldShader :
+  - Added support for `gaffer.icon STRING "name.png"` metadata in `.mtd` files.
+  - Added support for `gaffer.iconScale FLOAT scale` metadata in `.mtd` files.
+- ImageStats : Parallelised compute for improved performance.
+- Documentation : Added Spreadsheet article.
+
+Fixes
+-----
+
+- TransformTool : Fixed blank status message for certain non-editable selections.
+- Dispatcher : Fixed dispatch of two or more Switches or ContextProcessors connected together directly.
+- ArnoldTextureBake : Fixed recursion depth exception caused by more than ~300 meshes in a UDIM.
+- MergeScenes : Fixed bug in set computations which could trigger crashes with an overloaded cache.
 
 0.57.4.1 (relative to 0.57.4.0)
 ========
@@ -77,6 +189,7 @@ Improvements
   - Added support for creating columns from tweaks in ShaderTweaks nodes. This allows the mode and value to be grouped in a single column.
   - Added colour swatches for columns containing a switch as well as a colour value.
 - ShaderTweaks : Added a preset for tweaking OpenGL surface shaders.
+- Documentation : Added Contexts article.
 
 Fixes
 -----
@@ -263,6 +376,16 @@ Build
 -----
 
 - Cortex : Updated to version 10.0.0-a76.
+
+0.56.2.4 (relative to 0.56.2.3)
+========
+
+Fixes
+-----
+
+- Dispatcher : Fixed dispatch of two or more Switches or ContextProcessors connected together directly.
+- ArnoldTextureBake : Fixed recursion depth exception caused by more than ~300 meshes in a UDIM.
+- MergeScenes : Fixed bug in set computations which could trigger crashes with an overloaded cache.
 
 0.56.2.3 (relative to 0.56.2.2)
 ========
