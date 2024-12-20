@@ -36,7 +36,6 @@
 
 import unittest
 import imath
-import six
 
 import IECore
 
@@ -95,8 +94,8 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 		s2 = s.attributes()["test:surface"]
 		self.assertNotEqual( s2, s1 )
 
-		self.assertEqual( s1.getShader( "node1" ).blindData()["gaffer:nodeName"], IECore.StringData( "node1" ) )
-		self.assertEqual( s2.getShader( "node2" ).blindData()["gaffer:nodeName"], IECore.StringData( "node2" ) )
+		self.assertEqual( s1.getShader( "node1" ).blindData()["label"], IECore.StringData( "node1" ) )
+		self.assertEqual( s2.getShader( "node2" ).blindData()["label"], IECore.StringData( "node2" ) )
 
 	def testNodeColorBlindData( self ) :
 
@@ -162,6 +161,33 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 			],
 		)
 
+	def testParameterValuesWhenConnected( self ) :
+
+		n1 = GafferSceneTest.TestShader( "n1" )
+		n2 = GafferSceneTest.TestShader( "n2" )
+		n3 = GafferSceneTest.TestShader( "n3" )
+		n3["type"].setValue( "test:surface" )
+
+		n3["parameters"]["i"].setInput( n1["out"]["r"] )
+		n3["parameters"]["c"].setValue( imath.Color3f( 2, 3, 4 ) )
+		n3["parameters"]["c"].setInput( n2["out"] )
+
+		network = n3.attributes()["test:surface"]
+		self.assertEqual( len( network ), 3 )
+		self.assertEqual(
+			network.inputConnections( "n3" ), [
+				network.Connection( network.Parameter( "n2", "out", ), network.Parameter( "n3", "c" ) ),
+				network.Connection( network.Parameter( "n1", "out.r", ), network.Parameter( "n3", "i" ) )
+			]
+		)
+
+		# The values set on the parameters don't come through, but we get the default value from the
+		# connected shader's output as the correct type
+		self.assertEqual(
+			network.getShader( "n3" ).parameters,
+			IECore.CompoundData( { "i" : IECore.IntData( 0 ), "c" : IECore.Color3fData( imath.Color3f( 0 ) ), "spline" : IECore.SplinefColor3fData() } )
+		)
+
 	def testDetectCyclicConnections( self ) :
 
 		n1 = GafferSceneTest.TestShader()
@@ -182,8 +208,8 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 		# And a hard error when we attempt to actually generate
 		# the shader network.
 		for node in ( n1, n2, n3 ) :
-			six.assertRaisesRegex( self, RuntimeError, "cycle", node.attributesHash )
-			six.assertRaisesRegex( self, RuntimeError, "cycle", node.attributes )
+			self.assertRaisesRegex( RuntimeError, "cycle", node.attributesHash )
+			self.assertRaisesRegex( RuntimeError, "cycle", node.attributes )
 
 	def testSwitch( self ) :
 
@@ -209,7 +235,7 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 			self.assertEqual( len( network ), 2 )
 			self.assertEqual(
 				network.inputConnections( "n3" ),
-				[ network.Connection( network.Parameter( "n{0}".format( effectiveIndex + 1 ), "", ), network.Parameter( "n3", "c" ) ) ]
+				[ network.Connection( network.Parameter( "n{0}".format( effectiveIndex + 1 ), "out", ), network.Parameter( "n3", "c" ) ) ]
 			)
 
 	def testSwitchWithContextSensitiveIndex( self ) :
@@ -233,7 +259,7 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( len( network ), 2 )
 		self.assertEqual(
 			network.inputConnections( "n3" ),
-			[ network.Connection( network.Parameter( "n1", "", ), network.Parameter( "n3", "c" ) ) ]
+			[ network.Connection( network.Parameter( "n1", "out", ), network.Parameter( "n3", "c" ) ) ]
 		)
 
 		s["expression"] = Gaffer.Expression()
@@ -250,7 +276,7 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 				self.assertEqual( len( network ), 2 )
 				self.assertEqual(
 					network.inputConnections( "n3" ),
-					[ network.Connection( network.Parameter( "n{0}".format( effectiveIndex + 1 ), "", ), network.Parameter( "n3", "c" ) ) ]
+					[ network.Connection( network.Parameter( "n{0}".format( effectiveIndex + 1 ), "out", ), network.Parameter( "n3", "c" ) ) ]
 				)
 
 	def testSwitchWithComponentConnections( self ) :
@@ -284,7 +310,7 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 				self.assertEqual( len( network ), 2 )
 				self.assertEqual(
 					network.inputConnections( "n3" ),
-					[ network.Connection( network.Parameter( "n{0}".format( effectiveIndex + 1 ), "r", ), network.Parameter( "n3", "c.r" ) ) ]
+					[ network.Connection( network.Parameter( "n{0}".format( effectiveIndex + 1 ), "out.r", ), network.Parameter( "n3", "c.r" ) ) ]
 				)
 
 	def testComponentToComponentConnections( self ) :
@@ -301,9 +327,9 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual(
 			network.inputConnections( "n2" ),
 			[
-				( ( "n1", "r" ), ( "n2", "c.b" ) ),
-				( ( "n1", "b" ), ( "n2", "c.g" ) ),
-				( ( "n1", "g" ), ( "n2", "c.r" ) ),
+				( ( "n1", "out.r" ), ( "n2", "c.b" ) ),
+				( ( "n1", "out.b" ), ( "n2", "c.g" ) ),
+				( ( "n1", "out.g" ), ( "n2", "c.r" ) ),
 			]
 		)
 
@@ -332,8 +358,98 @@ class ShaderTest( GafferSceneTest.SceneTestCase ) :
 			self.assertEqual( len( network ), 2 )
 			self.assertEqual(
 				network.inputConnections( "n3" ),
-				[ network.Connection( network.Parameter( n, "", ), network.Parameter( "n3", "c" ) ) ]
+				[ network.Connection( network.Parameter( n, "out", ), network.Parameter( "n3", "c" ) ) ]
 			)
+
+	def testSpline( self ) :
+
+		n1 = GafferSceneTest.TestShader( "n1" )
+		n1["type"].setValue( "test:surface" )
+
+		network = n1.attributes()["test:surface"]
+
+		self.assertEqual( network.shaders()["n1"].parameters["spline"], IECore.SplinefColor3fData() )
+
+		n1["parameters"]["spline"].addPoint()
+		n1["parameters"]["spline"].addPoint()
+		n1["parameters"]["spline"].addPoint()
+		n1["parameters"]["spline"]["p1"]["x"].setValue( 1 )
+		n1["parameters"]["spline"]["p1"]["y"].setValue( imath.Color3f( 1 ) )
+		n1["parameters"]["spline"]["p2"]["x"].setValue( 0.6 )
+		n1["parameters"]["spline"]["p2"]["y"].setValue( imath.Color3f( 0.4, 0.5, 0.7 ) )
+
+
+		network = n1.attributes()["test:surface"]
+
+		refSpline = IECore.SplinefColor3f()
+		refSpline[0] = imath.Color3f( 0 )
+		refSpline[0] = imath.Color3f( 0 )
+		refSpline[0.6] = imath.Color3f( 0.4, 0.5, 0.7 )
+		refSpline[1] = imath.Color3f( 1 )
+		refSpline[1] = imath.Color3f( 1 )
+
+		self.assertEqual( network.shaders()["n1"].parameters["spline"].value, refSpline )
+
+		inN1 = GafferSceneTest.TestShader( "inN1" )
+
+		n1["parameters"]["spline"]["p0"]["y"].setInput( inN1["out"] )
+		n1["parameters"]["spline"]["p1"]["y"]["b"].setInput( inN1["out"]["g"] )
+
+		network = n1.attributes()["test:surface"]
+
+		self.assertEqual( len( network ), 2 )
+		self.assertEqual(
+			network.inputConnections( "n1" ), [
+				network.Connection( network.Parameter( "inN1", "out", ), network.Parameter( "n1", "spline[0].y" ) ),
+				network.Connection( network.Parameter( "inN1", "out", ), network.Parameter( "n1", "spline[1].y" ) ),
+				network.Connection( network.Parameter( "inN1", "out.g", ), network.Parameter( "n1", "spline[3].y.b" ) ),
+				network.Connection( network.Parameter( "inN1", "out.g", ), network.Parameter( "n1", "spline[4].y.b" ) )
+			]
+		)
+
+		n1["parameters"]["spline"]["p1"]["x"].setInput( inN1["out"]["g"] )
+
+		with self.assertRaisesRegex( RuntimeError, "n1.__outAttributes : Shader connections to n1.parameters.spline.p1.x are not supported." ) :
+			network = n1.attributes()["test:surface"]
+
+		n1["parameters"]["spline"]["p1"]["x"].setInput( None )
+
+		n1["parameters"]["spline"]["interpolation"].setValue( Gaffer.SplineDefinitionInterpolation.Linear )
+
+		network = n1.attributes()["test:surface"]
+		self.assertEqual(
+			network.inputConnections( "n1" ), [
+				network.Connection( network.Parameter( "inN1", "out", ), network.Parameter( "n1", "spline[0].y" ) ),
+				network.Connection( network.Parameter( "inN1", "out.g", ), network.Parameter( "n1", "spline[2].y.b" ) )
+			]
+		)
+
+		n1["parameters"]["spline"]["interpolation"].setValue( Gaffer.SplineDefinitionInterpolation.MonotoneCubic )
+
+		with self.assertRaisesRegex( RuntimeError, "n1.__outAttributes : Cannot support monotone cubic interpolation for splines with inputs, for plug n1.parameters.spline" ):
+			network = n1.attributes()["test:surface"]
+
+	def testOptionalParameter( self ) :
+
+		node = GafferSceneTest.TestShader( "n1" )
+		node["type"].setValue( "test:surface" )
+
+		shader = node.attributes()["test:surface"].outputShader()
+		self.assertNotIn( "optionalString", shader.parameters )
+
+		node["parameters"]["optionalString"]["enabled"].setValue( True )
+		shader = node.attributes()["test:surface"].outputShader()
+		self.assertIn( "optionalString", shader.parameters )
+		self.assertEqual( shader.parameters["optionalString"], IECore.StringData() )
+
+		node["parameters"]["optionalString"]["value"].setValue( "test" )
+		shader = node.attributes()["test:surface"].outputShader()
+		self.assertIn( "optionalString", shader.parameters )
+		self.assertEqual( shader.parameters["optionalString"], IECore.StringData( "test" ) )
+
+		node["parameters"]["optionalString"]["enabled"].setValue( False )
+		shader = node.attributes()["test:surface"].outputShader()
+		self.assertNotIn( "optionalString", shader.parameters )
 
 if __name__ == "__main__":
 	unittest.main()

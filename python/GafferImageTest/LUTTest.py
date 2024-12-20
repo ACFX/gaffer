@@ -38,6 +38,8 @@ import os
 import unittest
 import imath
 
+import PyOpenColorIO
+
 import IECore
 
 import Gaffer
@@ -47,8 +49,8 @@ import GafferImageTest
 
 class LUTTest( GafferImageTest.ImageTestCase ) :
 
-	imageFile = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
-	lut = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/openColorIO/luts/slog10.spi1d" )
+	imageFile = GafferImageTest.ImageTestCase.imagesPath() / "checker.exr"
+	lut = GafferImageTest.ImageTestCase.openColorIOPath() / "luts" / "slog10.spi1d"
 
 	def test( self ) :
 
@@ -66,16 +68,10 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		forward = GafferImage.ImageAlgo.image( o["out"] )
 		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), forward )
 
-		o["direction"].setValue( GafferImage.LUT.Direction.Inverse )
+		o["direction"].setValue( GafferImage.OpenColorIOTransform.Direction.Inverse )
 		inverse = GafferImage.ImageAlgo.image( o["out"] )
 		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), inverse )
 		self.assertNotEqual( forward, inverse )
-
-		o["interpolation"].setValue( GafferImage.LUT.Interpolation.Nearest )
-		tet = GafferImage.ImageAlgo.image( o["out"] )
-		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), tet )
-		self.assertNotEqual( forward, tet )
-		self.assertNotEqual( inverse, tet )
 
 	def testBadFileName( self ) :
 
@@ -95,8 +91,29 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.LUT()
 		o["in"].setInput( n["out"] )
 		o["fileName"].setValue( self.lut )
-		o["interpolation"].setValue( GafferImage.LUT.Interpolation.Tetrahedral )
-		self.assertRaises( RuntimeError, GafferImage.ImageAlgo.image, o["out"] )
+
+		image = GafferImage.ImageAlgo.image( o["out"] )
+
+		log = []
+		def loggingFunction( message ) :
+			log.append( message )
+
+		try :
+			PyOpenColorIO.SetLoggingFunction( loggingFunction )
+			o["interpolation"].setValue( GafferImage.LUT.Interpolation.Tetrahedral )
+			# Bad interpolations fall back to the default interpolation, but
+			# also emit a warning message.
+			self.assertEqual( GafferImage.ImageAlgo.image( o["out"] ), image )
+		finally :
+			PyOpenColorIO.ResetToDefaultLoggingFunction()
+
+		## \todo Perhaps libGafferImage should permanently install a logging function that
+		# forwards messages to `IECore::MessageHandler`?
+		self.assertEqual( len( log ), 1 )
+		self.assertIn(
+			"Interpolation specified by FileTransform 'tetrahedral' is not allowed with the given file",
+			log[0]
+		)
 
 	def testHashPassThrough( self ) :
 
@@ -149,7 +166,7 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 	def testChannelsAreSeparate( self ) :
 
 		i = GafferImage.ImageReader()
-		i["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/circles.exr" ) )
+		i["fileName"].setValue( self.imagesPath() / "circles.exr" )
 
 		o = GafferImage.LUT()
 		o["in"].setInput( i["out"] )

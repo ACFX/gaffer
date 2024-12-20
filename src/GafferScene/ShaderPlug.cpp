@@ -45,6 +45,8 @@
 #include "Gaffer/SubGraph.h"
 #include "Gaffer/Switch.h"
 
+#include "IECoreScene/ShaderNetwork.h"
+
 #include "IECore/MurmurHash.h"
 
 using namespace IECore;
@@ -95,10 +97,9 @@ bool isParameterType( const Plug *plug )
 		default :
 			// Use typeName query to avoid hard dependency on
 			// GafferOSL. It may be that we should move ClosurePlug
-			// to GafferScene anyway.s
+			// to GafferScene anyway.
 			return plug->isInstanceOf( "GafferOSL::ClosurePlug" );
 	}
-	return false;
 }
 
 } // namespace
@@ -158,7 +159,9 @@ bool ShaderPlug::acceptsInput( const Gaffer::Plug *input ) const
 
 	// And we support switches by traversing across them
 	// ourselves when necessary, in `shaderOutPlug()`.
-	if( auto switchNode = runTimeCast<const Switch>( sourcePlug->node() ) )
+
+	const Node *sourceNode = sourcePlug->node();
+	if( auto switchNode = runTimeCast<const Switch>( sourceNode ) )
 	{
 		if(
 			sourcePlug == switchNode->outPlug() ||
@@ -167,7 +170,7 @@ bool ShaderPlug::acceptsInput( const Gaffer::Plug *input ) const
 		)
 		{
 			// Reject switches which have inputs from non-shader nodes.
-			for( PlugIterator it( switchNode->inPlugs() ); !it.done(); ++it )
+			for( Plug::Iterator it( switchNode->inPlugs() ); !it.done(); ++it )
 			{
 				if( (*it)->getInput() && !isShaderOutPlug( (*it)->source() ) )
 				{
@@ -187,25 +190,24 @@ bool ShaderPlug::acceptsInput( const Gaffer::Plug *input ) const
 		}
 	}
 
-	// Really, we want to return false now, but during
-	// deserialisation we're not in control of the order
-	// of connection of plugs. We must accept intermediate
-	// connections from plugs on utility nodes on the
-	// assumption that they will later be connected to
-	// a shader.
+	// We must accept intermediate connections from plugs on utility nodes on the
+	// assumption that they will later be connected to a shader. Once we're connected
+	// to `sourcePlug`, we'll be consulted about any inputs it will receive, so we
+	// can reject non-shaders then.
 
-	const ScriptNode *script = ancestor<ScriptNode>();
-	if( !script || !script->isExecuting() )
-	{
-		return false;
-	}
-
-	const Node *sourceNode = sourcePlug->node();
-	return
+	if(
 		runTimeCast<const SubGraph>( sourceNode ) ||
 		runTimeCast<const Dot>( sourceNode ) ||
 		runTimeCast<const BoxIO>( sourceNode )
-	;
+	)
+	{
+		if( isParameterType( sourcePlug ) )
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 IECore::MurmurHash ShaderPlug::attributesHash() const
@@ -216,9 +218,11 @@ IECore::MurmurHash ShaderPlug::attributesHash() const
 		if( auto s = runTimeCast<const GafferScene::Shader>( p->node() ) )
 		{
 			Context::EditableScope scope( Context::current() );
+			std::string outputParameter;
 			if( p != s->outPlug() )
 			{
-				scope.set( Shader::g_outputParameterContextName, p->relativeName( s->outPlug() ) );
+				outputParameter = p->relativeName( s->outPlug() );
+				scope.set( Shader::g_outputParameterContextName, &outputParameter );
 			}
 			h = s->outAttributesPlug()->hash();
 		}
@@ -229,19 +233,63 @@ IECore::MurmurHash ShaderPlug::attributesHash() const
 
 IECore::ConstCompoundObjectPtr ShaderPlug::attributes() const
 {
+	static IECore::InternedString hasProxyNodesIdentifier( "__hasProxyNodes" );
 	if( const Gaffer::Plug *p = shaderOutPlug() )
 	{
 		if( auto s = runTimeCast<const GafferScene::Shader>( p->node() ) )
 		{
 			Context::EditableScope scope( Context::current() );
+			std::string outputParameter;
 			if( p != s->outPlug() )
 			{
-				scope.set( Shader::g_outputParameterContextName, p->relativeName( s->outPlug() ) );
+				outputParameter = p->relativeName( s->outPlug() );
+				scope.set( Shader::g_outputParameterContextName, &outputParameter );
 			}
-			return s->outAttributesPlug()->getValue();
+
+			IECore::ConstCompoundObjectPtr result = s->outAttributesPlug()->getValue();
+
+			// Check for outputs from ShaderTweakProxy, which should only be used with ShaderTweaks nodes
+			for( const auto &i : result->members() )
+			{
+				if( const IECoreScene::ShaderNetwork *shaderNetwork = IECore::runTimeCast< const IECoreScene::ShaderNetwork >( i.second.get() ) )
+				{
+					if( const BoolData *hasProxyNodes = shaderNetwork->blindData()->member<IECore::BoolData>( hasProxyNodesIdentifier ) )
+					{
+						if( hasProxyNodes->readable() )
+						{
+							throw IECore::Exception(
+								"ShaderTweakProxy only works with ShaderTweaks - it doesn't make sense to connect one here"
+							);
+
+						}
+					}
+				}
+			}
+			return result;
 		}
 	}
 	return new CompoundObject;
+}
+
+const Gaffer::ValuePlug *ShaderPlug::parameterSource( const IECoreScene::ShaderNetwork::Parameter &parameter) const
+{
+	if( const Gaffer::Plug *p = shaderOutPlug() )
+	{
+		if( auto s = runTimeCast<const GafferScene::Shader>( p->node() ) )
+		{
+			if( parameter.shader.string().empty() )
+			{
+				return s->parametersPlug()->descendant<ValuePlug>( parameter.name );
+			}
+			return s->parameterSource( p, parameter );
+		}
+	}
+	return nullptr;
+}
+
+Gaffer::ValuePlug *ShaderPlug::parameterSource( const IECoreScene::ShaderNetwork::Parameter &parameter)
+{
+	return const_cast<ValuePlug *>( const_cast<const ShaderPlug *>( this )->parameterSource( parameter ) );
 }
 
 const Gaffer::Plug *ShaderPlug::shaderOutPlug() const

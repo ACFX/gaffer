@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_REVERSEWINDING_H
-#define GAFFERSCENE_REVERSEWINDING_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -47,10 +46,10 @@ class GAFFERSCENE_API ReverseWinding : public ObjectProcessor
 
 	public :
 
-		ReverseWinding( const std::string &name=defaultName<ReverseWinding>() );
+		explicit ReverseWinding( const std::string &name=defaultName<ReverseWinding>() );
 		~ReverseWinding() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::ReverseWinding, ReverseWindingTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::ReverseWinding, ReverseWindingTypeId, ObjectProcessor );
 
 	protected :
 
@@ -63,5 +62,3 @@ class GAFFERSCENE_API ReverseWinding : public ObjectProcessor
 IE_CORE_DECLAREPTR( ReverseWinding )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_REVERSEWINDING_H

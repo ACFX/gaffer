@@ -34,8 +34,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_SPHERELEVELSET_H
-#define GAFFERSCENE_SPHERELEVELSET_H
+#pragma once
+
+#include "GafferVDB/Export.h"
 
 #include "GafferScene/ObjectSource.h"
 
@@ -46,14 +47,14 @@
 namespace GafferVDB
 {
 
-class GAFFERSCENE_API SphereLevelSet : public GafferScene::ObjectSource
+class GAFFERVDB_API SphereLevelSet : public GafferScene::ObjectSource
 {
 
 	public :
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferVDB::SphereLevelSet, GafferVDB::SphereLevelSetTypeId, ObjectSource );
 
-		SphereLevelSet( const std::string &name=defaultName<SphereLevelSet>() );
+		explicit SphereLevelSet( const std::string &name=defaultName<SphereLevelSet>() );
 		~SphereLevelSet() override;
 
 		Gaffer::StringPlug *gridPlug();
@@ -78,6 +79,8 @@ class GAFFERSCENE_API SphereLevelSet : public GafferScene::ObjectSource
 		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
+
 	private :
 
 		static size_t g_firstPlugIndex;
@@ -87,5 +90,3 @@ class GAFFERSCENE_API SphereLevelSet : public GafferScene::ObjectSource
 	IE_CORE_DECLAREPTR( SphereLevelSet )
 
 } // namespace GafferVDB
-
-#endif // GAFFERSCENE_SPHERELEVELSET_H

@@ -35,13 +35,13 @@
 ##########################################################################
 
 import imath
-import os
+import inspect
 import unittest
-import six
 
 import IECore
 
 import Gaffer
+import GafferTest
 import GafferImage
 import GafferScene
 import GafferSceneTest
@@ -74,6 +74,11 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( matchingPaths.match( "/plane/instances/group/1/plane" ), IECore.PathMatcher.Result.ExactMatch )
 		self.assertEqual( matchingPaths.match( "/plane/instances/group/1121/plane" ), IECore.PathMatcher.Result.ExactMatch )
 		self.assertEqual( matchingPaths.match( "/plane/instances/group/1121/sphere" ), IECore.PathMatcher.Result.NoMatch )
+
+		# Test root argument
+		matchingPaths = IECore.PathMatcher()
+		GafferScene.SceneAlgo.matchingPaths( filter["out"], instancer["out"], "/plane/instances/group/1121", matchingPaths )
+		self.assertEqual( matchingPaths.paths(), [ "/plane/instances/group/1121/plane" ] )
 
 	def testExists( self ) :
 
@@ -271,26 +276,166 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 
 		# Attributes history
 
-		with Gaffer.Context() as c :
-			c.setFrame( 20 )
-			history = GafferScene.SceneAlgo.history( transform["out"]["attributes"], "/group/plane" )
+		def runTest():
 
-		for plug, scenePath in [
-			( transform["out"], "/group/plane" ),
-			( transform["in"], "/group/plane" ),
-			( group["out"], "/group/plane" ),
-			( group["in"][0], "/plane" ),
-			( attributes["out"], "/plane" ),
-			( attributes["in"], "/plane" ),
-			( plane["out"], "/plane" ),
-		] :
-			self.assertEqual( history.scene, plug )
-			self.assertEqual( history.context.getFrame(), 20 )
-			self.assertEqual( GafferScene.ScenePlug.pathToString( history.context["scene:path"] ), scenePath )
-			self.assertFalse( any( n.startswith( "__" ) for n in history.context.names() ) )
-			history = history.predecessors[0] if history.predecessors else None
+			with Gaffer.Context() as c :
+				c.setFrame( 20 )
+				history = GafferScene.SceneAlgo.history( transform["out"]["attributes"], "/group/plane" )
 
-		self.assertIsNone( history )
+			for plug, scenePath in [
+				( transform["out"], "/group/plane" ),
+				( transform["in"], "/group/plane" ),
+				( group["out"], "/group/plane" ),
+				( group["in"][0], "/plane" ),
+				( attributes["out"], "/plane" ),
+				( attributes["in"], "/plane" ),
+				( plane["out"], "/plane" ),
+			] :
+				self.assertEqual( history.scene, plug )
+				self.assertEqual( history.context.getFrame(), 20 )
+				self.assertEqual( GafferScene.ScenePlug.pathToString( history.context["scene:path"] ), scenePath )
+				self.assertFalse( any( n.startswith( "__" ) for n in history.context.names() ) )
+				self.assertLessEqual( len( history.predecessors ), 1 )
+				history = history.predecessors[0] if history.predecessors else None
+
+			self.assertIsNone( history )
+
+		runTest()
+
+		# Before running the same test again, set up a bound query that pulls an unrelated piece of a
+		# scene plug, before running this test again.  This isn't part of attribute history,  so it
+		# shouldn't affect the result
+		attributes["attributes"].addChild( Gaffer.NameValuePlug( "test", imath.V3f( 0 ) ) )
+
+		sourceScene = GafferScene.Sphere()
+		boundQuery = GafferScene.BoundQuery()
+		boundQuery["scene"].setInput( sourceScene["out"] )
+		boundQuery["location"].setValue( "/sphere" )
+
+		attributes["attributes"]["NameValuePlug1"]["value"].setInput( boundQuery["center"] )
+
+
+		runTest()
+
+		# Test running the test while everything is already cached still works, and doesn't add any
+		# new entries to the cache
+		Gaffer.ValuePlug.clearHashCache()
+		runTest()
+		before = Gaffer.ValuePlug.hashCacheTotalUsage()
+		runTest()
+		self.assertEqual( Gaffer.ValuePlug.hashCacheTotalUsage(), before )
+
+		# Test that even the processes that aren't reading the cache still write to the cache, by
+		# making sure that a subsequent attributeHash doesn't need to do anything
+		Gaffer.ValuePlug.clearHashCache()
+		runTest()
+		with Gaffer.PerformanceMonitor() as pm :
+			with Gaffer.Context() as c :
+				c.setFrame( 20 )
+				transform["out"].attributesHash( "/group/plane" )
+		self.assertEqual( pm.combinedStatistics().hashCount, 0 )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testHistoryPerformance( self ) :
+
+		plane = GafferScene.Plane( "Plane" )
+		plane["divisions"].setValue( imath.V2i( 600 ) )
+
+		planeFilter = GafferScene.PathFilter( "PathFilter" )
+		planeFilter["paths"].setValue( IECore.StringVectorData( [ '/plane' ] ) )
+
+		instancer = GafferScene.Instancer( "Instancer" )
+		instancer["in"].setInput( plane["out"] )
+		instancer["prototypes"].setInput( plane["out"] )
+		instancer["filter"].setInput( planeFilter["out"] )
+
+		allFilter = GafferScene.PathFilter( "PathFilter1" )
+		allFilter["paths"].setValue( IECore.StringVectorData( [ '/...' ] ) )
+
+		setNode = GafferScene.Set( "Set" )
+		setNode["in"].setInput( instancer["out"] )
+		setNode["filter"].setInput( allFilter["out"] )
+
+		attributesFilter = GafferScene.SetFilter()
+		attributesFilter["setExpression"].setValue( "set" )
+
+		attributes = GafferScene.StandardAttributes()
+		attributes["in"].setInput( setNode["out"] )
+		attributes["filter"].setInput( attributesFilter["out"] )
+		attributes["attributes"].addChild( Gaffer.NameValuePlug( "test", 10 ) )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			history = GafferScene.SceneAlgo.history( attributes["out"]["attributes"], "/plane" )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testHistoryPerformanceAlreadyCached( self ) :
+
+		plane = GafferScene.Plane( "Plane" )
+		plane["divisions"].setValue( imath.V2i( 300 ) )
+
+		planeFilter = GafferScene.PathFilter( "PathFilter" )
+		planeFilter["paths"].setValue( IECore.StringVectorData( [ '/plane' ] ) )
+
+		instancer = GafferScene.Instancer( "Instancer" )
+		instancer["in"].setInput( plane["out"] )
+		instancer["prototypes"].setInput( plane["out"] )
+		instancer["filter"].setInput( planeFilter["out"] )
+		instancer["seedEnabled"].setValue( True )
+
+		allFilter = GafferScene.PathFilter()
+		allFilter["paths"].setValue( IECore.StringVectorData( [ '/...' ] ) )
+
+		parent = GafferScene.Parent()
+		parent["in"].setInput( instancer["out"] )
+		parent["child"][0].setInput( plane["out"] )
+		parent["filter"].setInput( allFilter["out"] )
+
+		parent["out"].attributesHash( "/plane/instances/plane/1000" )
+
+		# This history call should perform only the hashes necessary for attribute history, while pulling
+		# results for anything but the attributes plug from the hash cache.  ( In particular, this has
+		# been set up so that the hash of parent.branches is quite expensive, and this will fail if we
+		# don't use the cache for that )
+		with GafferTest.TestRunner.PerformanceScope() :
+			h = GafferScene.SceneAlgo.history( parent["out"]["attributes"], "/plane/instances/plane/1000" )
+
+		# Make sure that despite not evaluating all the inputs for performance reasons, we do get the
+		# source in the correct context
+		while h.predecessors:
+			h = h.predecessors[-1]
+		self.assertEqual( h.context["seed"], 5 )
+
+	def testObjectProcessorHistory( self ) :
+
+		plane = GafferScene.Plane()
+
+		meshType = GafferScene.MeshType()
+		meshType["in"].setInput( plane["out"] )
+
+		def runTest() :
+
+			history = GafferScene.SceneAlgo.history( meshType["out"]["object"], "/plane" )
+
+			for plug, scenePath in [
+				( meshType["out"], "/plane" ),
+				( meshType["in"], "/plane" ),
+				( plane["out"], "/plane" ),
+			] :
+				self.assertEqual( history.scene, plug )
+				self.assertEqual( GafferScene.ScenePlug.pathToString( history.context["scene:path"] ), scenePath )
+				history = history.predecessors[0] if history.predecessors else None
+
+			self.assertIsNone( history )
+
+		runTest()
+
+		# Test running the test while everything is already cached still works, and doesn't add any
+		# new entries to the cache
+		Gaffer.ValuePlug.clearHashCache()
+		runTest()
+		before = Gaffer.ValuePlug.hashCacheTotalUsage()
+		runTest()
+		self.assertEqual( Gaffer.ValuePlug.hashCacheTotalUsage(), before )
 
 	def testHistoryWithNoComputes( self ) :
 
@@ -307,7 +452,7 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 	def testHistoryWithInvalidPlug( self ) :
 
 		plane = GafferScene.Plane()
-		with six.assertRaisesRegex( self, RuntimeError, "is not a child of a ScenePlug" ) :
+		with self.assertRaisesRegex( RuntimeError, "is not a child of a ScenePlug" ) :
 			GafferScene.SceneAlgo.history( plane["name"], "/plane" )
 
 	def testHistoryIncludesConnections( self ) :
@@ -511,8 +656,8 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 		tweaks2["shader"].setValue( "test:surface" )
 
 		copyAttributes = GafferScene.CopyAttributes()
-		copyAttributes["in"][0].setInput( tweaks1["out"] )
-		copyAttributes["in"][1].setInput( tweaks2["out"] )
+		copyAttributes["in"].setInput( tweaks1["out"] )
+		copyAttributes["source"].setInput( tweaks2["out"] )
 
 		# No filter
 
@@ -652,11 +797,11 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 		m["in"].setInput( c["out"] )
 		o["in"].setInput( m["out"] )
 
-		pathWithoutMeta = os.path.join( self.temporaryDirectory(), "sceneAlgoSourceSceneWithoutMeta.exr" )
+		pathWithoutMeta = self.temporaryDirectory() / "sceneAlgoSourceSceneWithoutMeta.exr"
 		o["fileName"].setValue( pathWithoutMeta )
 		o.execute()
 
-		pathWithMeta = os.path.join( self.temporaryDirectory(), "sceneAlgoSourceSceneWithMeta.exr" )
+		pathWithMeta = self.temporaryDirectory() / "sceneAlgoSourceSceneWithMeta.exr"
 		m["metadata"].addChild(
 			Gaffer.NameValuePlug(
 				"gaffer:sourceScene", IECore.StringData( expectedPath ), True, "sourceScene",
@@ -776,6 +921,28 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( ah.attributeName, attributeName )
 		self.assertEqual( ah.attributeValue, attributeValue )
 		self.assertEqual( len( ah.predecessors ), numPredecessors )
+
+	def __assertParameterHistory( self, attributeHistory, predecessorIndices, scene, path, attributeName, shaderName, parameterName, parameterValue, numPredecessors ) :
+
+		ah = self.__predecessor( attributeHistory, predecessorIndices )
+
+		self.assertIsInstance( ah, GafferScene.SceneAlgo.AttributeHistory )
+		self.assertEqual( ah.scene, scene )
+		self.assertEqual( GafferScene.ScenePlug.pathToString( ah.context["scene:path"] ), path )
+		self.assertEqual( ah.attributeName, attributeName )
+		self.assertEqual( ah.attributeValue.shaders()[shaderName].parameters[parameterName].value, parameterValue )
+		self.assertEqual( len( ah.predecessors ), numPredecessors )
+
+	def __assertOptionHistory( self, optionHistory, predecessorIndices, scene, optionName, optionValue, numPredecessors ) :
+
+		oh = self.__predecessor( optionHistory, predecessorIndices )
+
+		self.assertIsInstance( oh, GafferScene.SceneAlgo.OptionHistory )
+		self.assertEqual( oh.scene, scene )
+		self.assertNotIn( "scene:path", oh.context )
+		self.assertEqual( oh.optionName, optionName )
+		self.assertEqual( oh.optionValue.value, optionValue )
+		self.assertEqual( len( oh.predecessors ), numPredecessors )
 
 	def testAttributeHistory( self ) :
 
@@ -1204,6 +1371,205 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertIsNone( GafferScene.SceneAlgo.attributeHistory( history, "c" ) )
 
+	def testAttributeHistoryWithAttributeTweaks( self ) :
+
+		# Graph
+		# -----
+		#
+		#        plane
+		#          |
+		#    planeAttributes
+		#          |
+		#      innerGroup
+		#          |
+		#      outerGroup
+		#          |
+		#    innerAttributes
+		#          |
+		#    outerAttributes
+		#
+		# Hierarchy and attributes
+		# ------------------------
+		#
+		#  /outer         a b c
+		#    /inner       a b
+		#       /plane    a
+		#
+
+		plane = GafferScene.Plane()
+
+		planeFilter = GafferScene.PathFilter()
+		planeFilter["paths"].setValue( IECore.StringVectorData( [ "/plane" ] ) )
+
+		planeAttributes = GafferScene.CustomAttributes()
+		planeAttributes["in"].setInput( plane["out"] )
+		planeAttributes["filter"].setInput( planeFilter["out"] )
+		planeAttributes["attributes"].addChild( Gaffer.NameValuePlug( "a", "planeA" ) )
+
+		innerGroup = GafferScene.Group()
+		innerGroup["in"][0].setInput( planeAttributes["out"] )
+		innerGroup["name"].setValue( "inner" )
+
+		outerGroup = GafferScene.Group()
+		outerGroup["in"][0].setInput( innerGroup["out"] )
+		outerGroup["name"].setValue( "outer" )
+
+		innerFilter = GafferScene.PathFilter()
+		innerFilter["paths"].setValue( IECore.StringVectorData( [ "/outer/inner" ] ) )
+
+		innerAttributes = GafferScene.CustomAttributes()
+		innerAttributes["in"].setInput( outerGroup["out"] )
+		innerAttributes["filter"].setInput( innerFilter["out"] )
+		innerAttributes["attributes"].addChild( Gaffer.NameValuePlug( "a", "innerA" ) )
+		innerAttributes["attributes"].addChild( Gaffer.NameValuePlug( "b", "innerB" ) )
+
+		outerFilter = GafferScene.PathFilter()
+		outerFilter["paths"].setValue( IECore.StringVectorData( [ "/outer" ] ) )
+
+		outerAttributes = GafferScene.CustomAttributes()
+		outerAttributes["in"].setInput( innerAttributes["out"] )
+		outerAttributes["filter"].setInput( outerFilter["out"] )
+		outerAttributes["attributes"].addChild( Gaffer.NameValuePlug( "a", "outerA" ) )
+		outerAttributes["attributes"].addChild( Gaffer.NameValuePlug( "b", "outerB" ) )
+		outerAttributes["attributes"].addChild( Gaffer.NameValuePlug( "c", "outerC" ) )
+
+		tweaksFilter = GafferScene.PathFilter()
+		tweaksFilter["paths"].setValue( IECore.StringVectorData( [ "/outer/inner/plane" ] ) )
+
+		tweaks = GafferScene.AttributeTweaks()
+		tweaks["in"].setInput( outerAttributes["out"] )
+		tweaks["filter"].setInput( tweaksFilter["out"] )
+
+		# No tweaks yet
+
+		history = GafferScene.SceneAlgo.history( tweaks["out"]["attributes"], "/outer/inner/plane" )
+		attributeHistory = GafferScene.SceneAlgo.attributeHistory( history, "a" )
+
+		self.__assertAttributeHistory( attributeHistory, [], tweaks["out"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0 ], tweaks["in"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0 ], outerAttributes["out"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0 ], outerAttributes["in"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0 ], innerAttributes["out"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0 ], innerAttributes["in"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0 ], outerGroup["out"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0 ], outerGroup["in"][0], "/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0, 0 ], innerGroup["out"], "/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0, 0, 0 ], innerGroup["in"][0], "/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ], planeAttributes["out"], "/plane", "a", IECore.StringData( "planeA" ), 0 )
+
+		# Without localisation, "b" and "c" have no history
+
+		self.assertIsNone( GafferScene.SceneAlgo.attributeHistory( history, "b" ) )
+		self.assertIsNone( GafferScene.SceneAlgo.attributeHistory( history, "c" ) )
+
+		# Add tweak on plane attribute
+
+		tweakA = Gaffer.TweakPlug( "a", "tweakA" )
+		tweaks["tweaks"].addChild( tweakA )
+
+		history = GafferScene.SceneAlgo.history( tweaks["out"]["attributes"], "/outer/inner/plane" )
+		attributeHistory = GafferScene.SceneAlgo.attributeHistory( history, "a" )
+
+		self.__assertAttributeHistory( attributeHistory, [], tweaks["out"], "/outer/inner/plane", "a", IECore.StringData( "tweakA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0 ], tweaks["in"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0 ], outerAttributes["out"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0 ], outerAttributes["in"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0 ], innerAttributes["out"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0 ], innerAttributes["in"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0 ], outerGroup["out"], "/outer/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0 ], outerGroup["in"][0], "/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0, 0 ], innerGroup["out"], "/inner/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0, 0, 0 ], innerGroup["in"][0], "/plane", "a", IECore.StringData( "planeA" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ], planeAttributes["out"], "/plane", "a", IECore.StringData( "planeA" ), 0 )
+
+		self.assertIsNone( GafferScene.SceneAlgo.attributeHistory( history, "b" ) )
+		self.assertIsNone( GafferScene.SceneAlgo.attributeHistory( history, "c" ) )
+
+		# Add tweaks to inherited attributes
+
+		tweakB = Gaffer.TweakPlug( "b", "tweakB" )
+		tweakC = Gaffer.TweakPlug( "c", "tweakC" )
+
+		tweaks["tweaks"].addChild( tweakB )
+		tweaks["tweaks"].addChild( tweakC )
+
+		# Fail while `localise` and `ignoreMissing` are off
+
+		with self.assertRaisesRegex( RuntimeError, "Cannot apply tweak with mode Replace to \"b\" : This parameter does not exist" ) :
+			history = GafferScene.SceneAlgo.history( tweaks["out"]["attributes"], "/outer/inner/plane" )
+			GafferScene.SceneAlgo.attributeHistory( history, "b" )
+
+		# Localise will get the attributes from parent locations
+
+		tweaks["localise"].setValue( True )
+
+		# Test attribute "b"
+
+		history = GafferScene.SceneAlgo.history( tweaks["out"]["attributes"], "/outer/inner/plane" )
+		attributeHistory = GafferScene.SceneAlgo.attributeHistory( history, "b" )
+
+		self.__assertAttributeHistory( attributeHistory, [], tweaks["out"], "/outer/inner/plane", "b", IECore.StringData( "tweakB" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0 ], tweaks["in"], "/outer/inner", "b", IECore.StringData( "innerB" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0 ], outerAttributes["out"], "/outer/inner", "b", IECore.StringData( "innerB" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0 ], outerAttributes["in"], "/outer/inner", "b", IECore.StringData( "innerB" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0, 0, 0 ], innerAttributes["out"], "/outer/inner", "b", IECore.StringData( "innerB" ), 0 )
+
+		# Test attribute "c"
+
+		attributeHistory = GafferScene.SceneAlgo.attributeHistory( history, "c" )
+
+		self.__assertAttributeHistory( attributeHistory, [], tweaks["out"], "/outer/inner/plane", "c", IECore.StringData( "tweakC" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0 ], tweaks["in"], "/outer", "c", IECore.StringData( "outerC" ), 1 )
+		self.__assertAttributeHistory( attributeHistory, [ 0, 0 ], outerAttributes["out"], "/outer", "c", IECore.StringData( "outerC" ), 0 )
+
+		# Localise is on, remove parent attribute tweak "b"
+
+		tweaks["tweaks"].removeChild( tweakB )
+
+		history = GafferScene.SceneAlgo.history( tweaks["out"]["attributes"], "/outer/inner/plane" )
+		attributeHistory = GafferScene.SceneAlgo.attributeHistory( history, "b" )
+
+		self.assertIsNone( GafferScene.SceneAlgo.attributeHistory( history, "b" ) )
+
+	def testParameterHistoryWithShaderTweaks( self ) :
+
+		# Graph
+		# -----
+		#
+		#       light
+		#         |
+		#       group
+		#         |
+		#    shaderTweaks
+		#
+
+		testLight = GafferSceneTest.TestLight()
+		testLight["visualiserAttributes"]["scale"]["enabled"].setValue( True )
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( testLight["out"] )
+
+		lightFilter = GafferScene.PathFilter()
+		lightFilter["paths"].setValue( IECore.StringVectorData( [ "/group/light" ] ) )
+
+		tweaks = GafferScene.ShaderTweaks()
+		tweaks["in"].setInput( group["out"] )
+		tweaks["filter"].setInput( lightFilter["out"] )
+		tweaks["shader"].setValue( "light" )
+		tweaks["localise"].setValue( True )
+
+		tweak = Gaffer.TweakPlug( "exposure", 2.0 )
+		tweaks["tweaks"].addChild( tweak )
+
+		history = GafferScene.SceneAlgo.history( tweaks["out"]["attributes"], "/group/light" )
+		attributeHistory = GafferScene.SceneAlgo.attributeHistory( history, "light" )
+
+		self.__assertParameterHistory( attributeHistory, [], tweaks["out"], "/group/light", "light", "__shader", "exposure", 2.0, 1 )
+		self.__assertParameterHistory( attributeHistory, [ 0 ], tweaks["in"], "/group/light", "light", "__shader", "exposure", 0.0, 1 )
+		self.__assertParameterHistory( attributeHistory, [ 0, 0 ], group["out"], "/group/light", "light", "__shader", "exposure", 0.0, 1 )
+		self.__assertParameterHistory( attributeHistory, [ 0, 0, 0 ], group["in"][0], "/light", "light", "__shader", "exposure", 0.0, 1 )
+		self.__assertParameterHistory( attributeHistory, [ 0, 0, 0, 0 ], testLight["out"], "/light", "light", "__shader", "exposure", 0.0, 0 )
+
 	def testAttributeHistoryWithMissingAttribute( self ) :
 
 		# Attribute doesn't exist, so we return None.
@@ -1211,6 +1577,349 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 		plane = GafferScene.Plane()
 		attributesHistory = GafferScene.SceneAlgo.history( plane["out"]["attributes"], "/plane" )
 		self.assertIsNone( GafferScene.SceneAlgo.attributeHistory( attributesHistory, "test" ) )
+
+	def testOptionHistory( self ) :
+
+		# Build network
+		# -------------
+		#
+		# standardOptions
+		#      |
+		# optionTweaks  customOptions
+		#       \         /
+		#        \       /
+		#         \     /
+		#      copyOptions
+
+		options = GafferScene.StandardOptions()
+		options["options"]["renderCamera"]["enabled"].setValue( True )
+		options["options"]["renderCamera"]["value"].setValue( "/renderCamera" )
+		options["options"]["resolutionMultiplier"]["enabled"].setValue( True )
+		options["options"]["resolutionMultiplier"]["value"].setValue( 2.0 )
+
+		tweaks = GafferScene.OptionTweaks()
+		tweaks["in"].setInput( options["out"] )
+
+		tweak = Gaffer.TweakPlug( "render:camera", "/tweakCamera" )
+		tweaks["tweaks"].addChild( tweak )
+
+		customOptions = GafferScene.CustomOptions()
+		customOptions["options"].addChild( Gaffer.NameValuePlug( "render:camera", "/customCamera" ) )
+		customOptions["options"].addChild( Gaffer.NameValuePlug( "render:resolutionMultiplier", 4.0 ) )
+
+		copyOptions = GafferScene.CopyOptions()
+		copyOptions["in"].setInput( tweaks["out"] )
+		copyOptions["source"].setInput( customOptions["out"] )
+
+		def assertResolutionMultiplierFromStandardOptions() :
+
+			history = GafferScene.SceneAlgo.history( copyOptions["out"]["globals"] )
+			optionHistory = GafferScene.SceneAlgo.optionHistory( history, "render:resolutionMultiplier" )
+
+			self.__assertOptionHistory( optionHistory, [], copyOptions["out"], "render:resolutionMultiplier", 2.0, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0 ], copyOptions["in"], "render:resolutionMultiplier", 2.0, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0 ], tweaks["out"], "render:resolutionMultiplier", 2.0, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0, 0 ], tweaks["in"], "render:resolutionMultiplier", 2.0, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0, 0, 0 ], options["out"], "render:resolutionMultiplier", 2.0, 0 )
+
+		def assertResolutionMultiplierFromCustomOptions() :
+
+			history = GafferScene.SceneAlgo.history( copyOptions["out"]["globals"] )
+			optionHistory = GafferScene.SceneAlgo.optionHistory( history, "render:resolutionMultiplier" )
+
+			self.__assertOptionHistory( optionHistory, [], copyOptions["out"], "render:resolutionMultiplier", 4.0, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0 ], copyOptions["source"], "render:resolutionMultiplier", 4.0, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0 ], customOptions["out"], "render:resolutionMultiplier", 4.0, 0 )
+
+		def assertRenderCameraFromStandardOptions() :
+
+			history = GafferScene.SceneAlgo.history( copyOptions["out"]["globals"] )
+			optionHistory = GafferScene.SceneAlgo.optionHistory( history, "render:camera" )
+
+			self.__assertOptionHistory( optionHistory, [], copyOptions["out"], "render:camera", "/tweakCamera", 1 )
+			self.__assertOptionHistory( optionHistory, [ 0 ], copyOptions["in"], "render:camera", "/tweakCamera", 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0 ], tweaks["out"], "render:camera", "/tweakCamera", 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0, 0 ], tweaks["in"], "render:camera", "/renderCamera", 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0, 0, 0 ], options["out"], "render:camera", "/renderCamera", 0 )
+
+
+		def assertRenderCameraFromCustomOptions() :
+
+			history = GafferScene.SceneAlgo.history( copyOptions["out"]["globals"] )
+			optionHistory = GafferScene.SceneAlgo.optionHistory( history, "render:camera" )
+
+			self.__assertOptionHistory( optionHistory, [], copyOptions["out"], "render:camera", "/customCamera", 1 )
+			self.__assertOptionHistory( optionHistory, [ 0 ], copyOptions["source"], "render:camera", "/customCamera", 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0 ], customOptions["out"], "render:camera", "/customCamera", 0 )
+
+		# Test `optionHistory()` with "render:camera" copied
+
+		copyOptions["options"].setValue( "render:ca*" )
+		assertRenderCameraFromCustomOptions()
+		assertResolutionMultiplierFromStandardOptions()
+
+		# Test `optionHistory()` with all "render:" options copied
+
+		copyOptions["options"].setValue( "render:*" )
+		assertRenderCameraFromCustomOptions()
+		assertResolutionMultiplierFromCustomOptions()
+
+		# Test `optionHistory()` with no options copied
+
+		copyOptions["options"].setValue( "" )
+		assertRenderCameraFromStandardOptions()
+		assertResolutionMultiplierFromStandardOptions()
+
+		# Test `optionHistory()` with an invalid option copied
+
+		copyOptions["options"].setValue( "not:an:option" )
+		assertRenderCameraFromStandardOptions()
+		assertResolutionMultiplierFromStandardOptions()
+
+		# Test `optionHistory()` with `copyOptions` disabled
+
+		copyOptions["enabled"].setValue( False )
+		assertRenderCameraFromStandardOptions()
+		assertResolutionMultiplierFromStandardOptions()
+
+	def testOptionHistoryWithMergeScenes( self ) :
+
+		# Build network
+		# -------------
+		#
+		# standardOptions  customOptions
+		#         \         /
+		#          \       /
+		#           \     /
+		#         mergeScenes
+
+		options = GafferScene.StandardOptions()
+		options["options"]["renderCamera"]["enabled"].setValue( True )
+		options["options"]["renderCamera"]["value"].setValue( "/renderCamera" )
+		options["options"]["resolutionMultiplier"]["enabled"].setValue( True )
+		options["options"]["resolutionMultiplier"]["value"].setValue( 2.0 )
+
+		customOptions = GafferScene.CustomOptions()
+		customOptions["options"].addChild( Gaffer.NameValuePlug( "render:camera", "/altCamera" ) )
+		customOptions["options"].addChild( Gaffer.NameValuePlug( "custom:camera", "/customCamera" ) )
+
+		mergeScenes = GafferScene.MergeScenes()
+		mergeScenes["in"][0].setInput( options["out"] )
+		mergeScenes["in"][1].setInput( customOptions["out"] )
+
+		def assertOptionHistory( optionName, mergeScenesInput, value ) :
+
+			history = GafferScene.SceneAlgo.history( mergeScenes["out"]["globals"] )
+			optionHistory = GafferScene.SceneAlgo.optionHistory( history, optionName )
+
+			if value is None :
+				self.assertIsNone( optionHistory )
+				return
+
+			self.__assertOptionHistory( optionHistory, [], mergeScenes["out"], optionName, value, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0 ], mergeScenesInput, optionName, value, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0 ], mergeScenesInput.getInput(), optionName, value, 0 )
+
+		# Test Keep mode
+
+		mergeScenes["globalsMode"].setValue( mergeScenes.Mode.Keep )
+
+		assertOptionHistory( "render:camera", mergeScenes["in"][0], "/renderCamera" )
+		assertOptionHistory( "custom:camera", None, None )
+		assertOptionHistory( "render:resolutionMultiplier", mergeScenes["in"][0], 2.0 )
+
+		# Test Merge mode
+
+		mergeScenes["globalsMode"].setValue( mergeScenes.Mode.Merge )
+
+		assertOptionHistory( "render:camera", mergeScenes["in"][1], "/altCamera" )
+		assertOptionHistory( "custom:camera", mergeScenes["in"][1], "/customCamera" )
+		assertOptionHistory( "render:resolutionMultiplier", mergeScenes["in"][0], 2.0 )
+
+		# Test Replace mode
+
+		mergeScenes["globalsMode"].setValue( mergeScenes.Mode.Replace )
+
+		assertOptionHistory( "render:camera", mergeScenes["in"][1], "/altCamera" )
+		assertOptionHistory( "custom:camera", mergeScenes["in"][1], "/customCamera" )
+		assertOptionHistory( "render:resolutionMultiplier", None, None )
+
+	def testOptionHistoryWithMissingOption( self ) :
+
+		# Option doesn't exist, so we return None.
+
+		plane = GafferScene.Plane()
+		globalsHistory = GafferScene.SceneAlgo.history( plane["out"]["globals"] )
+		self.assertIsNone( GafferScene.SceneAlgo.optionHistory( globalsHistory, "test" ) )
+
+	def testOptionHistoryWithContext( self ) :
+
+		# Build network
+		# -------------
+		#
+		# standardOptions  standardOptions
+		#            \         /
+		#             \       /
+		#              \     /
+		#            nameSwitch
+
+		options = GafferScene.StandardOptions()
+		options["options"]["renderCamera"]["enabled"].setValue( True )
+		options["options"]["renderCamera"]["value"].setValue( "/010" )
+
+		options2 = GafferScene.StandardOptions()
+		options2["options"]["renderCamera"]["enabled"].setValue( True )
+		options2["options"]["renderCamera"]["value"].setValue( "/020" )
+
+		nameSwitch = Gaffer.NameSwitch()
+		nameSwitch.setup( GafferScene.ScenePlug() )
+		nameSwitch["selector"].setValue( "${shot}" )
+		nameSwitch["in"][0]["name"].setValue( "010" )
+		nameSwitch["in"][0]["value"].setInput( options["out"] )
+		nameSwitch["in"][1]["name"].setValue( "020" )
+		nameSwitch["in"][1]["value"].setInput( options2["out"] )
+
+		def assertOptionHistory( optionName, nameSwitchInput, value ) :
+
+			history = GafferScene.SceneAlgo.history( nameSwitch["out"]["value"]["globals"] )
+			optionHistory = GafferScene.SceneAlgo.optionHistory( history, optionName )
+
+			if value is None :
+				self.assertIsNone( optionHistory )
+				return
+
+			self.__assertOptionHistory( optionHistory, [], nameSwitch["out"]["value"], optionName, value, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0 ], nameSwitchInput, optionName, value, 1 )
+			self.__assertOptionHistory( optionHistory, [ 0, 0 ], nameSwitchInput.getInput(), optionName, value, 0 )
+
+		with Gaffer.Context() as context :
+			context["shot"] = "010"
+			assertOptionHistory( "render:camera", nameSwitch["in"][0]["value"], "/010" )
+
+			context["shot"] = "020"
+			assertOptionHistory( "render:camera", nameSwitch["in"][1]["value"], "/020" )
+
+			# Use SceneTestCase's ContextSanitiser to indirectly test that `scene:path`
+			# isn't leaked into the context used to evaluate the globals.
+			context["scene:path"] = IECore.InternedStringVectorData( [ "plane" ] )
+			assertOptionHistory( "render:camera", nameSwitch["in"][1]["value"], "/020" )
+
+	def testOptionHistoryWithExpression( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["options"] = GafferScene.StandardOptions()
+		script["options"]["options"]["renderCamera"]["enabled"].setValue( True )
+		script["options"]["options"]["renderCamera"]["value"].setValue( "test" )
+
+		script["dot"] = Gaffer.Dot()
+		script["dot"].setup( script["options"]["out"] )
+		script["dot"]["in"].setInput( script["options"]["out"] )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( inspect.cleandoc(
+		"""
+		globals = parent["dot"]["in"]["globals"]
+		globals["option:render:camera"] = IECore.StringData( "expression" )
+		parent["dot"]["out"]["globals"] = globals
+		"""
+		) )
+
+		history = GafferScene.SceneAlgo.history( script["dot"]["out"]["globals"] )
+		optionHistory = GafferScene.SceneAlgo.optionHistory( history, "render:camera" )
+
+		self.__assertOptionHistory( optionHistory, [], script["dot"]["out"], "render:camera", "expression", 1 )
+		self.__assertOptionHistory( optionHistory, [ 0 ], script["dot"]["in"], "render:camera", "test", 1 )
+		self.__assertOptionHistory( optionHistory, [ 0, 0 ], script["options"]["out"], "render:camera", "test", 0 )
+
+	def testHistoryWithExpression( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["options"] = GafferScene.StandardOptions()
+		script["options"]["options"]["renderCamera"]["enabled"].setValue( True )
+		script["options"]["options"]["renderCamera"]["value"].setValue( "test" )
+
+		script["dot"] = Gaffer.Dot()
+		script["dot"].setup( script["options"]["out"] )
+		script["dot"]["in"].setInput( script["options"]["out"] )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( inspect.cleandoc(
+		"""
+		globals = parent["dot"]["in"]["globals"]
+		globals["option:render:camera"] = IECore.StringData( "expression" )
+		parent["dot"]["out"]["globals"] = globals
+		"""
+		) )
+
+		def runTest() :
+
+			history = GafferScene.SceneAlgo.history( script["dot"]["out"]["globals"] )
+
+			for plug in [
+				script["dot"]["out"],
+				script["dot"]["in"],
+				script["options"]["out"],
+			] :
+				self.assertEqual( history.scene, plug )
+				self.assertLessEqual( len( history.predecessors ), 1 )
+				history = history.predecessors[0] if history.predecessors else None
+
+			self.assertIsNone( history )
+
+		# Test running the test while everything is already cached still works, and doesn't add any
+		# new entries to the cache
+		Gaffer.ValuePlug.clearHashCache()
+		runTest()
+		before = Gaffer.ValuePlug.hashCacheTotalUsage()
+		runTest()
+		self.assertEqual( Gaffer.ValuePlug.hashCacheTotalUsage(), before )
+
+		# Test that even the processes that aren't reading the cache still write to the cache, by
+		# making sure that a subsequent globalsHash doesn't need to do anything
+		Gaffer.ValuePlug.clearHashCache()
+		runTest()
+		with Gaffer.PerformanceMonitor() as pm :
+			script["dot"]["out"].globalsHash()
+		self.assertEqual( pm.combinedStatistics().hashCount, 0 )
+
+		# Test branching history with an expression using two input globals
+		# to produce our output
+		script["options2"] = GafferScene.StandardOptions()
+		script["options2"]["options"]["renderCamera"]["enabled"].setValue( True )
+		script["options2"]["options"]["renderCamera"]["value"].setValue( "other" )
+
+		script["expression"].setExpression( inspect.cleandoc(
+		"""
+		globals = parent["dot"]["in"]["globals"]
+		globals["option:render:camera"] = parent["options2"]["out"]["globals"].get( "option:render:camera" )
+		parent["dot"]["out"]["globals"] = globals
+		"""
+		) )
+
+		history = GafferScene.SceneAlgo.history( script["dot"]["out"]["globals"] )
+		self.assertEqual( len( history.predecessors ), 2 )
+		self.assertEqual( history.predecessors[0].scene, script["dot"]["in"] )
+		self.assertEqual( history.predecessors[1].scene, script["options2"]["out"] )
+
+		# Test that an expression using the value of a non-globals plug to modify the globals
+		# does not affect the history
+		script["cube"] = GafferScene.Cube()
+		script["cube"]["sets"].setValue( "foo" )
+
+		script["expression"].setExpression( inspect.cleandoc(
+		"""
+		globals = parent["dot"]["in"]["globals"]
+		globals["option:render:camera"] = IECore.StringData( "expression" )
+		globals["option:setNames"] = parent["cube"]["out"]["setNames"]
+		parent["dot"]["out"]["globals"] = globals
+		"""
+		) )
+
+		history = GafferScene.SceneAlgo.history( script["dot"]["out"]["globals"] )
+		self.assertEqual( len( history.predecessors ), 1 )
+		self.assertEqual( history.predecessors[0].scene, script["dot"]["in"] )
 
 	def testHistoryWithCanceller( self ) :
 
@@ -1236,6 +1945,487 @@ class SceneAlgoTest( GafferSceneTest.SceneTestCase ) :
 			history = GafferScene.SceneAlgo.history( shaderAssignment["in"]["attributes"], "/" )
 
 		assertNoCanceller( history )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testHistoryDiamondPerformance( self ) :
+
+		# A series of diamonds where every iteration reads the output of the
+		# previous iteration twice and then feeds into the next iteration.
+		#
+		#      o
+		#     / \
+		#    o   o
+		#     \ /
+		#      o
+		#     / \
+		#    o   o
+		#     \ /
+		#      o
+		#     / \
+		#     ...
+		#     \ /
+		#      o
+		#
+		# Without caching, this leads to an explosion of paths through the
+		# graph, and can lead to poor performance in `history()`.
+
+		plane = GafferScene.Plane()
+
+		loop = Gaffer.Loop()
+		loop.setup( plane["out"] )
+		loop["in"].setInput( plane["out"] )
+
+		copyOptions = GafferScene.CopyOptions()
+		copyOptions["in"].setInput( loop["previous"] )
+		copyOptions["source"].setInput( loop["previous"] )
+		copyOptions["options"].setValue( "*" )
+
+		loop["next"].setInput( copyOptions["out"] )
+		loop["iterations"].setValue( 20 )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			GafferScene.SceneAlgo.history( loop["out"]["globals"] )
+
+	def testLinkingQueries( self ) :
+
+		# Everything linked to `defaultLights` via the default value for the attribute.
+
+		defaultLight = GafferSceneTest.TestLight()
+		defaultLight["name"].setValue( "defaultLight" )
+
+		nonDefaultLight = GafferSceneTest.TestLight()
+		nonDefaultLight["name"].setValue( "nonDefaultLight" )
+		nonDefaultLight["defaultLight"].setValue( False )
+		nonDefaultLight["sets"].setValue( "specialLights" )
+
+		sphere = GafferScene.Sphere()
+		cube = GafferScene.Cube()
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( sphere["out"] )
+		group["in"][1].setInput( cube["out"] )
+		group["in"][2].setInput( defaultLight["out"] )
+		group["in"][3].setInput( nonDefaultLight["out"] )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( group["out"], "/group/defaultLight" ),
+			IECore.PathMatcher( [ "/group", "/group/sphere", "/group/cube" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( group["out"], "/group/nonDefaultLight" ),
+			IECore.PathMatcher()
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( group["out"], IECore.PathMatcher( [ "/group/defaultLight", "/group/nonDefaultLight" ] ) ),
+			IECore.PathMatcher( [ "/group", "/group/sphere", "/group/cube" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( group["out"], "/group/cube" ),
+			IECore.PathMatcher( [ "/group/defaultLight" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( group["out"], "/group/sphere" ),
+			IECore.PathMatcher( [ "/group/defaultLight" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( group["out"], IECore.PathMatcher( [ "/group/sphere", "/group/cube" ] ) ),
+			IECore.PathMatcher( [ "/group/defaultLight" ] )
+		)
+
+		# Cube relinked only to `specialLights`.
+
+		cubeFilter = GafferScene.PathFilter()
+		cubeFilter["paths"].setValue( IECore.StringVectorData( [ "/group/cube" ] ) )
+
+		standardAttributes = GafferScene.StandardAttributes()
+		standardAttributes["in"].setInput( group["out"] )
+		standardAttributes["filter"].setInput( cubeFilter["out"] )
+		standardAttributes["attributes"]["linkedLights"]["enabled"].setValue( True )
+		standardAttributes["attributes"]["linkedLights"]["value"].setValue( "specialLights" )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], "/group/defaultLight" ),
+			IECore.PathMatcher( [ "/group", "/group/sphere" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], "/group/nonDefaultLight" ),
+			IECore.PathMatcher( [ "/group/cube" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], IECore.PathMatcher( [ "/group/defaultLight", "/group/nonDefaultLight" ] ) ),
+			IECore.PathMatcher( [ "/group", "/group/sphere", "/group/cube" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], IECore.PathMatcher( [ "/group/defaultLight", "/group/nonDefaultLight" ] ) ),
+			IECore.PathMatcher( [ "/group", "/group/sphere", "/group/cube" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], "/group/cube" ),
+			IECore.PathMatcher( [ "/group/nonDefaultLight" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], "/group/sphere" ),
+			IECore.PathMatcher( [ "/group/defaultLight" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], IECore.PathMatcher( [ "/group/sphere", "/group/cube" ] ) ),
+			IECore.PathMatcher( [ "/group/defaultLight", "/group/nonDefaultLight" ] )
+		)
+
+		# Light removed from `specialLights` set.
+
+		nonDefaultLight["sets"].setValue( "" )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], "/group/defaultLight" ),
+			IECore.PathMatcher( [ "/group", "/group/sphere" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], "/group/nonDefaultLight" ),
+			IECore.PathMatcher()
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], "/group/cube" ),
+			IECore.PathMatcher()
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], "/group/sphere" ),
+			IECore.PathMatcher( [ "/group/defaultLight" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], IECore.PathMatcher( [ "/group/sphere", "/group/cube" ] ) ),
+			IECore.PathMatcher( [ "/group/defaultLight" ] )
+		)
+
+		# `/group/nonDefaultLight` treated as default again.
+
+		nonDefaultLight["defaultLight"].setValue( True )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], "/group/defaultLight" ),
+			IECore.PathMatcher( [ "/group", "/group/sphere" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedObjects( standardAttributes["out"], "/group/nonDefaultLight" ),
+			IECore.PathMatcher( [ "/group", "/group/sphere" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], "/group/cube" ),
+			IECore.PathMatcher()
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], "/group/sphere" ),
+			IECore.PathMatcher( [ "/group/defaultLight", "/group/nonDefaultLight" ] )
+		)
+		self.assertEqual(
+			GafferScene.SceneAlgo.linkedLights( standardAttributes["out"], IECore.PathMatcher( [ "/group/sphere", "/group/cube" ] ) ),
+			IECore.PathMatcher( [  "/group/defaultLight", "/group/nonDefaultLight" ] )
+		)
+
+	def testMatchingPathsHash( self ) :
+
+		# /group
+		#    /sphere
+		#    /cube
+
+		sphere = GafferScene.Sphere()
+		cube = GafferScene.Cube()
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( sphere["out"] )
+		group["in"][1].setInput( cube["out"] )
+
+		filter1 = GafferScene.PathFilter()
+		filter1["paths"].setValue( IECore.StringVectorData( [ "/*" ] ) )
+
+		filter2 = GafferScene.PathFilter()
+		filter2["paths"].setValue( IECore.StringVectorData( [ "/*/*" ] ) )
+
+		filter3 = GafferScene.PathFilter()
+		filter3["paths"].setValue( IECore.StringVectorData( [ "/gro??" ] ) )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.matchingPathsHash( filter1["out"], group["out"] ),
+			GafferScene.SceneAlgo.matchingPathsHash( filter3["out"], group["out"] )
+		)
+
+		self.assertNotEqual(
+			GafferScene.SceneAlgo.matchingPathsHash( filter1["out"], group["out"] ),
+			GafferScene.SceneAlgo.matchingPathsHash( filter2["out"], group["out"] )
+		)
+
+		self.assertNotEqual(
+			GafferScene.SceneAlgo.matchingPathsHash( filter2["out"], group["out"] ),
+			GafferScene.SceneAlgo.matchingPathsHash( filter3["out"], group["out"] )
+		)
+
+		rootFilter = GafferScene.PathFilter()
+		rootFilter["paths"].setValue( IECore.StringVectorData( [ "/" ] ) )
+		emptyFilter = GafferScene.PathFilter()
+
+		self.assertNotEqual(
+			GafferScene.SceneAlgo.matchingPathsHash( rootFilter["out"], group["out"] ),
+			GafferScene.SceneAlgo.matchingPathsHash( emptyFilter["out"], group["out"] )
+		)
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testMatchingPathsHashPerformance( self ) :
+
+		# Trick to make an infinitely recursive scene. This high-depth but
+		# low-branching-factor scene is in deliberate contrast to the
+		# lots-of-children-at-one-location scene used in
+		# `FilterResultsTest.testHashPerformance()`. We need good parallel
+		# performance for both topologies.
+		scene = GafferScene.ScenePlug()
+		scene["childNames"].setValue( IECore.InternedStringVectorData( [ "one", "two" ] ) )
+		# We use a PathMatcher to limit the search recursion, matching
+		# every item 22 deep, but no other.
+		pathMatcher = IECore.PathMatcher( [ "/*" * 22 ] )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			GafferScene.SceneAlgo.matchingPathsHash( pathMatcher, scene )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testMatchingPathsPerformance( self ) :
+
+		# See comments in `testMatchingPathsHashPerformance()`.
+		scene = GafferScene.ScenePlug()
+		scene["childNames"].setValue( IECore.InternedStringVectorData( [ "one", "two" ] ) )
+		pathMatcher = IECore.PathMatcher( [ "/*" * 21 ] )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			result = IECore.PathMatcher()
+			GafferScene.SceneAlgo.matchingPaths( pathMatcher, scene, result )
+
+	def testRenderAdaptors( self ) :
+
+		sphere = GafferScene.Sphere()
+
+		defaultAdaptors = GafferScene.SceneAlgo.createRenderAdaptors()
+		defaultAdaptors["in"].setInput( sphere["out"] )
+
+		def a() :
+
+			r = GafferScene.StandardAttributes()
+			r["attributes"]["doubleSided"]["enabled"].setValue( True )
+			r["attributes"]["doubleSided"]["value"].setValue( False )
+
+			return r
+
+		GafferScene.SceneAlgo.registerRenderAdaptor( "Test", a )
+
+		testAdaptors = GafferScene.SceneAlgo.createRenderAdaptors()
+		testAdaptors["in"].setInput( sphere["out"] )
+
+		self.assertFalse( "doubleSided" in sphere["out"].attributes( "/sphere" ) )
+		self.assertTrue( "doubleSided" in testAdaptors["out"].attributes( "/sphere" ) )
+		self.assertEqual( testAdaptors["out"].attributes( "/sphere" )["doubleSided"].value, False )
+
+		GafferScene.SceneAlgo.deregisterRenderAdaptor( "Test" )
+
+		defaultAdaptors2 = GafferScene.SceneAlgo.createRenderAdaptors()
+		defaultAdaptors2["in"].setInput( sphere["out"] )
+
+		self.assertScenesEqual( defaultAdaptors["out"], defaultAdaptors2["out"] )
+		self.assertSceneHashesEqual( defaultAdaptors["out"], defaultAdaptors2["out"] )
+
+	def testRenderAdaptorScope( self ) :
+
+		def adaptor() :
+
+			result = GafferScene.CustomOptions()
+			result["options"].addChild( Gaffer.NameValuePlug( "adapted", True ) )
+			return result
+
+		for clientPattern, rendererPattern, client, renderer, expectAdapted in (
+			( "*", "*", None, None, True ),
+			( "*", "*", "Render", "Arnold", True ),
+			( "*", "Arnold", "Render", "Arnold", True ),
+			( "*", "Arnold", "Render", "Cycles", False ),
+			( "Render", "*", "Render", "Arnold", True ),
+			( "Render", "*", "InteractiveRender", "Arnold", False ),
+			( "Render InteractiveRender", "*", "Render", "Arnold", True ),
+			( "Render InteractiveRender", "*", "InteractiveRender", "Arnold", True ),
+			( "Render InteractiveRender", "*", "SceneView", "Arnold", False ),
+			( "Render", "Arnold", "SceneView", "Arnold", False ),
+			( "Render", "Arnold", "Render", "Arnold", True ),
+		) :
+			with self.subTest( clientPattern = clientPattern, rendererPattern = rendererPattern, client = client, renderer = renderer ) :
+
+				GafferScene.SceneAlgo.registerRenderAdaptor( "Test", adaptor, clientPattern, rendererPattern )
+				self.addCleanup( GafferScene.SceneAlgo.deregisterRenderAdaptor, "Test" )
+
+				adaptors = GafferScene.SceneAlgo.createRenderAdaptors()
+				if client is not None :
+					adaptors["client"].setValue( client )
+				if renderer is not None :
+					adaptors["renderer"].setValue( renderer )
+
+				if expectAdapted :
+					self.assertIn( "option:adapted", adaptors["out"].globals() )
+				else :
+					self.assertNotIn( "option:adapted", adaptors["out"].globals() )
+
+	def testRenderAdaptorScopePlugs( self ) :
+
+		def adaptor() :
+
+			result = GafferScene.CustomOptions()
+			result["client"] = Gaffer.StringPlug()
+			result["renderer"] = Gaffer.StringPlug()
+
+			result["options"].addChild( Gaffer.NameValuePlug( "theClient", "" ) )
+			result["options"].addChild( Gaffer.NameValuePlug( "theRenderer", "" ) )
+
+			result["options"][0]["value"].setInput( result["client"] )
+			result["options"][1]["value"].setInput( result["renderer"] )
+
+			return result
+
+		for client, renderer in [
+			( "*", "*" ),
+			( "SceneView", "Arnold" ),
+		] :
+
+			with self.subTest( client = client, renderer = renderer ) :
+
+				GafferScene.SceneAlgo.registerRenderAdaptor( "Test", adaptor, client, renderer )
+				self.addCleanup( GafferScene.SceneAlgo.deregisterRenderAdaptor, "Test" )
+
+				adaptors = GafferScene.SceneAlgo.createRenderAdaptors()
+				adaptors["client"].setValue( "SceneView" )
+				adaptors["renderer"].setValue( "Arnold" )
+
+				self.assertEqual( adaptors["out"].globals()["option:theClient"].value, "SceneView" )
+				self.assertEqual( adaptors["out"].globals()["option:theRenderer"].value, "Arnold" )
+
+	def testNullAdaptor( self ) :
+
+		def a() :
+
+			return None
+
+		GafferScene.SceneAlgo.registerRenderAdaptor( "Test", a )
+
+		with IECore.CapturingMessageHandler() as mh :
+			GafferScene.SceneAlgo.createRenderAdaptors()
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Warning )
+		self.assertEqual( mh.messages[0].context, "SceneAlgo::createRenderAdaptors" )
+		self.assertEqual( mh.messages[0].message, "Adaptor \"Test\" returned null" )
+
+	def testAdaptorCreationException( self ) :
+
+		def a() :
+
+			raise RuntimeError( "Oops" )
+
+		GafferScene.SceneAlgo.registerRenderAdaptor( "Test", a )
+
+		with self.assertRaisesRegex( RuntimeError, "Oops" ) :
+			GafferScene.SceneAlgo.createRenderAdaptors()
+
+	def testValidateName( self ) :
+
+		for goodName in [ "obi", "lewis", "ludo" ] :
+			with self.subTest( name = goodName ) :
+				GafferScene.SceneAlgo.validateName( goodName )
+
+		for badName in [ "..", "...", "", "a/b", "/", "a/", "/b", "*", "a*", "b*", "[", "b[a-z]", "\\", "\\a", "b\\", "a?", "?a" ] :
+			with self.subTest( name = badName ) :
+				with self.assertRaises( RuntimeError ) :
+					GafferScene.SceneAlgo.validateName( badName )
+
+	def testFindAll( self ) :
+
+		plane = GafferScene.Plane()
+
+		planeFilter = GafferScene.PathFilter()
+		planeFilter["paths"].setValue( IECore.StringVectorData( [ "/plane" ] ) )
+
+		sphere = GafferScene.Sphere()
+
+		instancer = GafferScene.Instancer()
+		instancer["in"].setInput( plane["out"] )
+		instancer["prototypes"].setInput( sphere["out"] )
+		instancer["filter"].setInput( planeFilter["out"] )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.findAll(
+				instancer["out"],
+				lambda scene, path : scene["transform"].getValue().translation().x > 0
+			),
+			IECore.PathMatcher( [
+				"/plane/instances/sphere/1",
+				"/plane/instances/sphere/3",
+			] )
+		)
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.findAll(
+				instancer["out"],
+				lambda scene, path : scene["transform"].getValue().translation().x > 0,
+				root = "/not/a/location"
+			),
+			IECore.PathMatcher()
+		)
+
+	def testFindAllWithAttribute( self ) :
+
+		# /group
+		#	/light1
+		# /light2
+
+		light1 = GafferSceneTest.TestLight()
+		light1["name"].setValue( "light1" )
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( light1["out"] )
+
+		light2 = GafferSceneTest.TestLight()
+		light2["name"].setValue( "light2" )
+
+		parent = GafferScene.Parent()
+		parent["in"].setInput( group["out"] )
+		parent["children"][0].setInput( light2["out"] )
+		parent["parent"].setValue( "/" )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.findAllWithAttribute( parent["out"], "light:mute" ),
+			IECore.PathMatcher()
+		)
+
+		light1["mute"]["enabled"].setValue( True )
+		light1["mute"]["value"].setValue( True )
+
+		light2["mute"]["enabled"].setValue( True )
+		light2["mute"]["value"].setValue( False )
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.findAllWithAttribute( parent["out"], "light:mute" ),
+			IECore.PathMatcher( [ "/group/light1", "/light2" ] )
+		)
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.findAllWithAttribute( parent["out"], "light:mute", value = IECore.BoolData( True ) ),
+			IECore.PathMatcher( [ "/group/light1" ] )
+		)
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.findAllWithAttribute( parent["out"], "light:mute", value = IECore.BoolData( False ) ),
+			IECore.PathMatcher( [ "/light2" ] )
+		)
+
+		self.assertEqual(
+			GafferScene.SceneAlgo.findAllWithAttribute( parent["out"], "light:mute", root = "/group" ),
+			IECore.PathMatcher( [ "/group/light1" ] )
+		)
+
+	def tearDown( self ) :
+
+		GafferSceneTest.SceneTestCase.tearDown( self )
+		GafferScene.SceneAlgo.deregisterRenderAdaptor( "Test" )
 
 if __name__ == "__main__":
 	unittest.main()

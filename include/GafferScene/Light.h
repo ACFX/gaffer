@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_LIGHT_H
-#define GAFFERSCENE_LIGHT_H
+#pragma once
 
 #include "GafferScene/ObjectSource.h"
 
@@ -51,9 +50,9 @@ class GAFFERSCENE_API Light : public ObjectSource
 
 	public :
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Light, LightTypeId, ObjectSource );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Light, LightTypeId, ObjectSource );
 
-		Light( const std::string &name=defaultName<Light>() );
+		explicit Light( const std::string &name=defaultName<Light>() );
 		~Light() override;
 
 		Gaffer::Plug *parametersPlug();
@@ -61,6 +60,9 @@ class GAFFERSCENE_API Light : public ObjectSource
 
 		Gaffer::BoolPlug *defaultLightPlug();
 		const Gaffer::BoolPlug *defaultLightPlug() const;
+
+		Gaffer::NameValuePlug *mutePlug();
+		const Gaffer::NameValuePlug *mutePlug() const;
 
 		Gaffer::CompoundDataPlug *visualiserAttributesPlug();
 		const Gaffer::CompoundDataPlug *visualiserAttributesPlug() const;
@@ -95,5 +97,3 @@ class GAFFERSCENE_API Light : public ObjectSource
 IE_CORE_DECLAREPTR( Light )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_LIGHT_H

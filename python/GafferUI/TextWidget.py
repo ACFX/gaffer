@@ -35,10 +35,8 @@
 #
 ##########################################################################
 
+import enum
 import warnings
-import six
-
-import IECore
 
 import Gaffer
 import GafferUI
@@ -49,9 +47,9 @@ from Qt import QtWidgets
 
 class TextWidget( GafferUI.Widget ) :
 
-	DisplayMode = IECore.Enum.create( "Normal", "Password" )
+	DisplayMode = enum.Enum( "DisplayMode", [ "Normal", "Password" ] )
 
-	def __init__( self, text="", editable=True, displayMode=DisplayMode.Normal, characterWidth=None, **kw ) :
+	def __init__( self, text="", editable=True, displayMode=DisplayMode.Normal, characterWidth=None, placeholderText="", **kw ) :
 
 		GafferUI.Widget.__init__( self, _LineEdit(), **kw )
 
@@ -59,6 +57,7 @@ class TextWidget( GafferUI.Widget ) :
 		self.setEditable( editable )
 		self.setDisplayMode( displayMode )
 		self.setFixedCharacterWidth( characterWidth )
+		self.setPlaceholderText( placeholderText )
 
 	def setText( self, text ) :
 
@@ -66,14 +65,7 @@ class TextWidget( GafferUI.Widget ) :
 
 	def getText( self ) :
 
-		if six.PY3 :
-			return self._qtWidget().text()
-		else :
-			# \todo We didn't return `unicode` here because
-			# we didn't want to break any client code. But perhaps
-			# now is the time, since everyone is transitioning to
-			# Python 3?
-			return self._qtWidget().text().encode( "utf-8" )
+		return self._qtWidget().text()
 
 	def setEditable( self, editable ) :
 
@@ -149,6 +141,10 @@ class TextWidget( GafferUI.Widget ) :
 		selectionStart = self._qtWidget().selectionStart()
 		return ( selectionStart, selectionStart + len( self._qtWidget().selectedText() ) )
 
+	def selectedText( self ) :
+
+		return self._qtWidget().selectedText()
+
 	## Sets the preferred width for the widget in terms of the
 	# number of characters which can be displayed. The widget can still
 	# contract and expand, but will request to be this width if possible.
@@ -175,6 +171,15 @@ class TextWidget( GafferUI.Widget ) :
 	def getFixedCharacterWidth ( self ) :
 
 		return self._qtWidget().getFixedCharacterWidth()
+
+	## Sets what text is displayed when the main text is empty.
+	def setPlaceholderText( self, text ) :
+
+		self._qtWidget().setPlaceholderText( text )
+
+	def getPlaceholderText( self ) :
+
+		return self._qtWidget().placeholderText()
 
 	## \deprecated Use setFixedCharacterWidth() instead.
 	def setCharacterWidth( self, numCharacters ) :
@@ -256,10 +261,10 @@ class TextWidget( GafferUI.Widget ) :
 			return self.__selectingFinishedSignal
 		except :
 			self.__selectingFinishedSignal = GafferUI.WidgetSignal()
-			self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
-			self.keyReleaseSignal().connect( Gaffer.WeakMethod( self.__keyRelease ), scoped = False )
-			self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
-			self.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ), scoped = False )
+			self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
+			self.keyReleaseSignal().connect( Gaffer.WeakMethod( self.__keyRelease ) )
+			self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
+			self.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) )
 			self.__lastSelection = self.getSelection()
 			self.__numSelectionPossiblyFinishedEvents = 0
 

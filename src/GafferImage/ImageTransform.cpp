@@ -46,10 +46,11 @@
 
 #include "IECore/AngleConversion.h"
 
-#include "OpenEXR/ImathMatrixAlgo.h"
+#include "Imath/ImathMatrixAlgo.h"
 
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 
+using namespace boost::placeholders;
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
@@ -108,7 +109,7 @@ class ImageTransform::ChainingScope : boost::noncopyable
 	public :
 
 		ChainingScope( const Gaffer::Context *context, const ImageTransform *imageTransform )
-			:	m_chained( context->get<bool>( chainedContextName, false ) )
+			:	m_chained( context->get<bool>( chainedContextName, false ) ), m_true( true )
 		{
 			if( !m_chained )
 			{
@@ -117,7 +118,7 @@ class ImageTransform::ChainingScope : boost::noncopyable
 					// We're the bottom of a chain. Tell the upstream
 					// nodes they've been chained.
 					m_scope.emplace( context );
-					m_scope->set( chainedContextName, true );
+					m_scope->set( chainedContextName, &m_true );
 				}
 			}
 			else
@@ -154,8 +155,9 @@ class ImageTransform::ChainingScope : boost::noncopyable
 
 		// We use `optional` here to avoid the expense of constructing
 		// an EditableScope when we don't need one.
-		boost::optional<Context::EditableScope> m_scope;
+		std::optional<Context::EditableScope> m_scope;
 		bool m_chained;
+		bool m_true;
 
 };
 
@@ -189,7 +191,7 @@ class ImageTransform::CleanScope : boost::noncopyable
 	private :
 
 		const Context *m_context;
-		boost::optional<Context::EditableScope> m_scope;
+		std::optional<Context::EditableScope> m_scope;
 
 };
 
@@ -197,7 +199,7 @@ class ImageTransform::CleanScope : boost::noncopyable
 // ImageTransform
 //////////////////////////////////////////////////////////////////////////
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ImageTransform );
+GAFFER_NODE_DEFINE_TYPE( ImageTransform );
 
 size_t ImageTransform::g_firstPlugIndex = 0;
 
@@ -232,6 +234,7 @@ ImageTransform::ImageTransform( const std::string &name )
 	resampledInPlug()->setInput( resample->outPlug() );
 
 	// Pass through the things we don't change at all.
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );

@@ -64,9 +64,11 @@ Gaffer.Metadata.registerValue( "ai:light:quad_light", "type", "quad" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "intensityParameter", "intensity" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:quad_light", "widthParameter", "width" )
+Gaffer.Metadata.registerValue( "ai:light:quad_light", "heightParameter", "height" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "portalParameter", "portal" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "spreadParameter", "spread" )
-Gaffer.Metadata.registerValue( "ai:light:quad_light", "visualiserOrientation", imath.M44f().rotate( imath.V3f( 0, 0, 0.5 * math.pi ) ) )
+Gaffer.Metadata.registerValue( "ai:light:quad_light", "uvOrientation", imath.M33f().rotate( 0.5 * math.pi ) )
 
 Gaffer.Metadata.registerValue( "ai:light:disk_light", "type", "disk" )
 Gaffer.Metadata.registerValue( "ai:light:disk_light", "intensityParameter", "intensity" )
@@ -81,6 +83,7 @@ Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "exposureParameter", "
 Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "colorParameter", "color" )
 Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "radiusParameter", "radius" )
 Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "visualiserOrientation", imath.M44f().rotate( imath.V3f( 0.5 * math.pi, 0 , 0 ) ) )
+Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "heightToScaleRatio", 2.0 )
 
 Gaffer.Metadata.registerValue( "ai:light:skydome_light", "intensityParameter", "intensity" )
 Gaffer.Metadata.registerValue( "ai:light:skydome_light", "exposureParameter", "exposure" )
@@ -99,3 +102,6 @@ Gaffer.Metadata.registerValue( "ai:light:photometric_light", "radiusParameter", 
 # Most profiles generally shine down -y
 Gaffer.Metadata.registerValue( "ai:light:photometric_light", "visualiserOrientation", imath.M44f().rotate( imath.V3f( -0.5 * math.pi, 0 , 0 ) ) )
 Gaffer.Metadata.registerValue( "ai:light:photometric_light", "type", "photometric" )
+
+Gaffer.Metadata.registerValue( "ai:lightFilter:filter:light_blocker", "typeParameter", "geometry_type" )
+Gaffer.Metadata.registerValue( "ai:lightFilter:filter:light_blocker", "type", "lightBlocker" )

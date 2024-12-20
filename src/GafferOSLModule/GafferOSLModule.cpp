@@ -57,6 +57,8 @@
 
 #include "OSL/oslversion.h"
 
+#include "fmt/format.h"
+
 using namespace boost::python;
 using namespace GafferBindings;
 using namespace GafferOSL;
@@ -72,6 +74,12 @@ object shaderMetadata( const OSLShader &s, const char *key, bool copy = true )
 object parameterMetadata( const OSLShader &s, const Gaffer::Plug *plug, const char *key, bool copy = true )
 {
 	return dataToPython( s.parameterMetadata( plug, key ), copy );
+}
+
+ShadingEnginePtr oslShaderShadingEngine( const OSLShader &s, const IECore::CompoundObject *substitutions )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return const_cast<ShadingEngine*>( s.shadingEngine( substitutions ).get() );
 }
 
 int oslLibraryVersionMajor()
@@ -102,10 +110,10 @@ std::string oslCodeSource( const OSLCode &oslCode, const std::string &shaderName
 
 std::string repr( ShadingEngine::Transform &s )
 {
-	return boost::str(
-		boost::format( "GafferOSL.ShadingEngine.Transform( fromObjectSpace = %s, toObjectSpace = %s )" )
-			% IECorePython::repr<Imath::M44f>( s.fromObjectSpace )
-			% IECorePython::repr<Imath::M44f>( s.toObjectSpace )
+	return fmt::format(
+		"GafferOSL.ShadingEngine.Transform( fromObjectSpace = {}, toObjectSpace = {} )",
+		IECorePython::repr<Imath::M44f>( s.fromObjectSpace ),
+		IECorePython::repr<Imath::M44f>( s.toObjectSpace )
 	);
 }
 
@@ -161,6 +169,7 @@ BOOST_PYTHON_MODULE( _GafferOSL )
 	GafferBindings::DependencyNodeClass<OSLShader>()
 		.def( "shaderMetadata", &shaderMetadata, ( boost::python::arg_( "_copy" ) = true ) )
 		.def( "parameterMetadata", &parameterMetadata, ( boost::python::arg_( "plug" ), boost::python::arg_( "_copy" ) = true ) )
+		.def( "shadingEngine", &oslShaderShadingEngine, ( boost::python::arg_( "substitutions" ) = object() ) )
 	;
 
 	GafferBindings::DependencyNodeClass<OSLImage>();

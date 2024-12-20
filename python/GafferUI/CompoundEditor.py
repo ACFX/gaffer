@@ -39,7 +39,6 @@ import collections
 import functools
 import sys
 import weakref
-import six
 
 import imath
 
@@ -54,6 +53,16 @@ from Qt import QtWidgets
 
 class CompoundEditor( GafferUI.Editor ) :
 
+	class Settings( GafferUI.Editor.Settings ) :
+
+		def __init__( self ) :
+
+			GafferUI.Editor.Settings.__init__( self )
+
+			self["editScope"] = Gaffer.Plug()
+
+	IECore.registerRunTimeTyped( Settings, typeName = "GafferUI::CompoundEditor::Settings" )
+
 	# The CompoundEditor constructor args are considered 'private', used only
 	# by the persistent layout system.
 	def __init__( self, scriptNode, _state={}, **kw ) :
@@ -65,8 +74,8 @@ class CompoundEditor( GafferUI.Editor ) :
 
 		self.__splitContainer.append( _TabbedContainer() )
 
-		self.__splitContainer.keyPressSignal().connect( CompoundEditor.__keyPress, scoped = False )
-		self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ), scoped = False )
+		self.__splitContainer.keyPressSignal().connect( CompoundEditor.__keyPress )
+		self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ) )
 
 		self.__windowState = _state.get( "windowState", {} )
 
@@ -80,54 +89,45 @@ class CompoundEditor( GafferUI.Editor ) :
 		# By Now, all Editors will have been created, so we can restore any state
 		self.__restoreEditorState( _state.get( "editorState", {} ) )
 
-		self.parentChangedSignal().connect( Gaffer.WeakMethod( self.__parentChanged ), scoped=False )
+		self.parentChangedSignal().connect( Gaffer.WeakMethod( self.__parentChanged ) )
 
-	# Returns the editor of the specified type that the user is currently
-	# interested in. This takes into account detached panels and window
-	# ordering such that when the keyboard focus is with an editor of the
-	# requested type, in the active window, that editor will be returned.
-	# Otherwise the first editor in the active window belonging to the
-	# CompoundEditor will be returned. If none can be found, then the first
-	# matching editor from any of the CompoundEditor's windows will be returned.
-	# If focussedOnly is true, None will be returned in cases where the
-	# keyboard focus is not with a matching editor in the active window.
-	def editor( self, type = GafferUI.Editor, focussedOnly = False ) :
+	# Returns the editor of the specified type that the user is most likely to
+	# be interested in. If `focussedOnly` is true, only editors with the keyboard
+	# focus are considered. If `visibleOnly` is true, only visible editors are
+	# considered. Returns None if no suitable editor can be found.
+	def editor( self, type = GafferUI.Editor, focussedOnly = False, visibleOnly = False ) :
 
-		candidates = [ self ]
-		candidates.extend( self._detachedPanels() )
+		candidates = []
 
-		editor = None
+		for editor in self.editors( type ) :
 
-		for candidate in candidates :
-
-			# Skip a window if its inactive
-			window = candidate._qtWidget().windowHandle()
-			if not window or not window.isActive() :
+			visible = editor.visible()
+			if visibleOnly and not visible :
 				continue
 
-			# We the focus widget is (or is a child of) an editor of the right
-			# type, use that
-			focusWidget = GafferUI.Widget._owner( candidate._qtWidget().focusWidget() )
-			if focusWidget is not None :
-				editor = focusWidget.ancestor( type )
-				if editor :
-					break
+			window = editor.ancestor( GafferUI.Window )
+			qtWindow = window._qtWidget().windowHandle()
+			windowIsActive = qtWindow and qtWindow.isActive()
+			windowFocusWidget = GafferUI.Widget._owner( window._qtWidget().focusWidget() )
+			hasWindowFocus = editor == windowFocusWidget or editor.isAncestorOf( windowFocusWidget )
 
-			# If the window was active, but the focussed editor was something
-			# else, if requested, pick the first matching editor in this window.
-			if editor is None and not focussedOnly :
-				editors = candidate.editors( type )
-				if editors :
-					editor = editors[0]
-					break
+			if focussedOnly and not ( windowIsActive and hasWindowFocus ) :
+				continue
 
-		# Worst case, go find the first editor of the right type anywhere
-		if editor is None and not focussedOnly :
-			editors = self.editors( type )
-			if editors :
-				editor = editors[0]
+			candidates.append( {
+				"editor" : editor,
+				"visible" : visible,
+				"hasWindowFocus" : hasWindowFocus,
+				"windowIsActive" : windowIsActive,
+			} )
 
-		return editor
+		if not candidates :
+			return None
+
+		# Sort on visibility first, so that an invisible editor never takes precedence over a visible one.
+		# Then prefer editors in the active window, and of those, the one with the focus.
+		candidates.sort( key = lambda x : ( x["visible"], x["windowIsActive"], x["hasWindowFocus"] ), reverse = True )
+		return candidates[0]["editor"]
 
 	## Returns all the editors that comprise this CompoundEditor, optionally
 	# filtered by type.
@@ -144,7 +144,7 @@ class CompoundEditor( GafferUI.Editor ) :
 
 		self.__splitContainer.addEditor( editor )
 
-	__nodeSetMenuSignal = Gaffer.Signal2()
+	__nodeSetMenuSignal = Gaffer.Signals.Signal2()
 	## A signal emitted to populate a menu for manipulating the node set of a
 	# NodeSetEditor - the signature is `slot( nodeSetEditor, menuDefinition )`.
 	@classmethod
@@ -174,14 +174,14 @@ class CompoundEditor( GafferUI.Editor ) :
 	def _createDetachedPanel( self, *args, **kwargs ) :
 
 		panel = _DetachedPanel( self,  *args, **kwargs )
-		panel.__removeOnCloseConnection = panel.closedSignal().connect( lambda w : w.parent()._removeDetachedPanel( w ) )
-		panel.keyPressSignal().connect( CompoundEditor.__keyPress, scoped = False )
+		panel.__removeOnCloseConnection = panel.closedSignal().connect( lambda w : w.parent()._removeDetachedPanel( w ), scoped = True )
+		panel.keyPressSignal().connect( CompoundEditor.__keyPress )
 
 		scriptWindow = self.ancestor( GafferUI.ScriptWindow )
 		if scriptWindow :
 			panel.setTitle( scriptWindow.getTitle() )
 			weakSetTitle = Gaffer.WeakMethod( panel.setTitle )
-			panel.__titleChangedConnection = scriptWindow.titleChangedSignal().connect( lambda w, t : weakSetTitle( t ) )
+			panel.__titleChangedConnection = scriptWindow.titleChangedSignal().connect( lambda w, t : weakSetTitle( t ), scoped = True )
 			# It's not directly in the qt hierarchy so shortcut events don't make it to the MenuBar
 			scriptWindow.menuBar().addShortcutTarget( panel )
 
@@ -194,6 +194,9 @@ class CompoundEditor( GafferUI.Editor ) :
 		panel.__removeOnCloseConnection = None
 		panel.__titleChangedConnection = None
 		panel._applyVisibility()
+
+		assert( not panel.visible() )
+		GafferUI.WidgetAlgo.keepUntilIdle( panel )
 
 	def __visibilityChanged(self, widget) :
 
@@ -296,21 +299,18 @@ class CompoundEditor( GafferUI.Editor ) :
 		# Store the driver (if set) for any NodeSetEditors
 		nodeSetEditors = [ e for e in self.editors() if isinstance( e, GafferUI.NodeSetEditor ) ]
 		for n in nodeSetEditors :
-			driver, mode = n.getNodeSetDriver()
-			if driver is not None :
+			nodeSet = n.getNodeSet()
+			# NumericBookmarkSet doesn't support repr as we don't want to
+			# couple the layout-centric serialisation that assumes 'scriptNode'
+			# is a global into Sets, so we keep it all contained here.
+			if isinstance( nodeSet, Gaffer.NumericBookmarkSet ) :
 				state[ self.__pathToEditor(n) ] = {
-					"driver" : self.__pathToEditor(driver),
-					"driverMode" : mode
+					"nodeSet" : "Gaffer.NumericBookmarkSet( scriptNode, %d )" % nodeSet.getBookmark()
 				}
-			else :
-				nodeSet = n.getNodeSet()
-				# NumericBookmarkSet doesn't support repr as we don't want to
-				# couple the layout-centric serialisation that assumes 'scriptNode'
-				# is a global into Sets, so we keep it all contained here.
-				if isinstance( nodeSet, Gaffer.NumericBookmarkSet ) :
-					state[ self.__pathToEditor(n) ] = {
-						"nodeSet" : "Gaffer.NumericBookmarkSet( scriptNode, %d )" % nodeSet.getBookmark()
-					}
+			elif nodeSet.isSame( self.scriptNode().focusSet() ) :
+				state[ self.__pathToEditor(n) ] = {
+					"nodeSet" : "scriptNode.focusSet()"
+				}
 
 		return state
 
@@ -327,8 +327,10 @@ class CompoundEditor( GafferUI.Editor ) :
 
 				if "driver" in state :
 
-					driver = self.__editorAtPath( state["driver"] )
-					editor.setNodeSetDriver( driver, state["driverMode"] )
+					# Connecting an editor as the driver of another editor is deprecated.  The closest
+					# equivalent is following the focus node - since multiple editors can all follow
+					# focus node
+					editor.setNodeSet( self.scriptNode().focusSet() )
 
 				elif "nodeSet" in state :
 
@@ -340,7 +342,8 @@ class CompoundEditor( GafferUI.Editor ) :
 					editor.setNodeSet( nodeSet )
 
 			except Exception as e :
-				sys.stderr.write(
+				IECore.msg(
+					IECore.Msg.Level.Error, "CompoundEditor",
 					"Unable to restore editor state for {editor}: {error}\n".format(
 						editor = "%s (%s)" % ( path, type(editor).__name__ ),
 						error = "%s: %s" % ( type(e).__name__, e )
@@ -513,7 +516,7 @@ class _SplitContainer( GafferUI.SplitContainer ) :
 		if self.isSplit() :
 			sizes = self.getSizes()
 			splitPosition = ( float( sizes[0] ) / sum( sizes ) ) if sum( sizes ) else 0
-			return "( GafferUI.SplitContainer.Orientation.%s, %f, ( %s, %s ) )" % (
+			return "( GafferUI.SplitContainer.{}, {}, ( {}, {} ) )".format(
 				str( self.getOrientation() ), splitPosition,
 				self[0].serialiseChildren( scriptNode ), self[1].serialiseChildren( scriptNode )
 			)
@@ -573,10 +576,10 @@ class _TabbedContainer( GafferUI.TabbedContainer ) :
 		cornerWidget._qtWidget().setObjectName( "gafferCompoundEditorTools" )
 		self.setCornerWidget( cornerWidget )
 
-		self.__currentTabChangedConnection = self.currentChangedSignal().connect( Gaffer.WeakMethod( self.__currentTabChanged ) )
-		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
-		self.__dragLeaveConnection = self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
-		self.__dropConnection = self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
+		self.currentChangedSignal().connect( Gaffer.WeakMethod( self.__currentTabChanged ) )
+		self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
+		self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
+		self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
 
 		tabBar = self._qtWidget().tabBar()
 		tabBar.setProperty( "gafferHasTabCloseButtons", GafferUI._Variant.toVariant( True ) )
@@ -593,7 +596,7 @@ class _TabbedContainer( GafferUI.TabbedContainer ) :
 	# such as add/remove/insert directly or state tracking will fail.
 	def addEditor( self, nameOrEditor ) :
 
-		if isinstance( nameOrEditor, six.string_types ) :
+		if isinstance( nameOrEditor, str ) :
 			editor = GafferUI.Editor.create( nameOrEditor, self.ancestor( CompoundEditor ).scriptNode() )
 		else :
 			editor = nameOrEditor
@@ -608,8 +611,8 @@ class _TabbedContainer( GafferUI.TabbedContainer ) :
 		self.setCurrent( editor )
 
 		self.setLabel( editor, editor.getTitle() )
-		editor.__titleChangedConnection = editor.titleChangedSignal().connect( Gaffer.WeakMethod( self.__titleChanged ) )
-		editor.__keyPressConnection = editor.keyPressSignal().connect( self.__pinningWidget.editorKeyPress )
+		editor.__titleChangedConnection = editor.titleChangedSignal().connect( Gaffer.WeakMethod( self.__titleChanged ), scoped = True )
+		editor.__keyPressConnection = editor.keyPressSignal().connect( self.__pinningWidget.editorKeyPress, scoped = True )
 
 		self.__updateStyles()
 
@@ -659,10 +662,12 @@ class _TabbedContainer( GafferUI.TabbedContainer ) :
 		button._qtWidget().setFixedSize( 11, 11 )
 
 		editor.__removeButton = button
-		editor.__removeButtonConnection = button.clickedSignal().connect( functools.partial(
-			lambda editor, container, _ : container().removeEditor( editor() ),
-			weakref.ref( editor ), weakref.ref( self )
-		) )
+		button.clickedSignal().connect(
+			functools.partial(
+				lambda editor, container, _ : container().removeEditor( editor() ),
+				weakref.ref( editor ), weakref.ref( self )
+			)
+		)
 
 		tabIndex = self.index( editor )
 		self._qtWidget().tabBar().setTabButton( tabIndex, QtWidgets.QTabBar.RightSide, button._qtWidget() )
@@ -731,17 +736,13 @@ class _TabbedContainer( GafferUI.TabbedContainer ) :
 	def __currentTabChanged( self, tabbedContainer, currentEditor ) :
 
 		if isinstance( currentEditor, GafferUI.NodeSetEditor ) :
-			self.__nodeSetChangedConnection = currentEditor.nodeSetChangedSignal().connect( Gaffer.WeakMethod( self.__updatePinningWidget ) )
-			self.__nodeSetDriverChangedConnection = currentEditor.nodeSetDriverChangedSignal().connect( Gaffer.WeakMethod( self.__updatePinningWidget ) )
-			self.__drivenNodeSetsChangedConnection = currentEditor.drivenNodeSetsChangedSignal().connect( Gaffer.WeakMethod( self.__updatePinningWidget ) )
+			self.__nodeSetChangedConnection = currentEditor.nodeSetChangedSignal().connect( Gaffer.WeakMethod( self.__updatePinningWidget ), scoped = True )
 		else :
 			self.__nodeSetChangedConnection = None
-			self.__nodeSetDriverChangedConnection = None
-			self.__drivenNodeSetsChangedConnection = None
 
 		self.__updatePinningWidget()
 
-	def __updatePinningWidget( self, unused = None, updateAssociated = True ) :
+	def __updatePinningWidget( self, unused = None ) :
 
 		# This method will get called during the deletion of a layout
 		# containing linked editor chains if the current editor's driver gets
@@ -750,24 +751,12 @@ class _TabbedContainer( GafferUI.TabbedContainer ) :
 		# hierarchy will have been deleted before we are deleted, so we end up
 		# with 'Underlying C++ object has been deleted' errors. Sanity check
 		# that we're not just further down the deletion list...
+		# \todo : Now that linked editor chains no longer exist, this should
+		# be unnecessary
 		if not GafferUI._qtObjectIsValid( self._qtWidget() ) :
 			return
 
 		self.__pinningWidget.update()
-
-		if updateAssociated :
-
-			editor = self.getCurrent()
-			if editor and isinstance( editor, GafferUI.NodeSetEditor ) :
-				# Technically, their driven status hasn't changed, but the color for them
-				# may have, eg: A -> B -> C and we just unlinked B from C. A should now show
-				# B's grouping not C's. We can't rely on nodeSetChangedSignal as the actual
-				# node set may not have changed....
-				for drivenEditor in editor.drivenNodeSets( recurse = True ) :
-					parentTabbedContainer = drivenEditor.ancestor( _TabbedContainer )
-					if parentTabbedContainer is not None :
-						parentTabbedContainer.__updatePinningWidget( updateAssociated = False )
-
 
 	def __tabContextMenu( self, pos ) :
 
@@ -1434,15 +1423,6 @@ def _restoreWindowState( gafferWindow, boundData ) :
 	if not window :
 		return
 
-	# If we don't clear the full-screen flag then restoring geometry won't
-	# work, as its overridden by the full-screen state.  Doing it conditionally
-	# improves fullscreen - fullscreen layout transitions (avoids pointless
-	# re-scale animations), but does mean that we don't properly restore the
-	# non-fullscreen size of the window and it will keep that of the first
-	# fullscreen layout loaded. Seems a reasonable trade-off though.
-	if not ( boundData["fullScreen"] and window.windowState() == QtCore.Qt.WindowFullScreen ) :
-		window.setWindowState( QtCore.Qt.WindowNoState )
-
 	targetScreen = QtWidgets.QApplication.primaryScreen()
 
 	if boundData["screen"] > -1 :
@@ -1451,21 +1431,19 @@ def _restoreWindowState( gafferWindow, boundData ) :
 			targetScreen = screens[ boundData["screen"] ]
 			window.setScreen( targetScreen )
 
-	screenGeom = targetScreen.availableGeometry()
-	window.setGeometry(
-		( boundData["bound"].min()[0] * screenGeom.width() ) + screenGeom.x(),
-		( ( 1.0 - boundData["bound"].max()[1] ) * screenGeom.height() ) + screenGeom.y(),
-		( boundData["bound"].size()[0] * screenGeom.width() ),
-		( boundData["bound"].size()[1] * screenGeom.height() )
-	)
-
 	if boundData["fullScreen"] :
 		window.setWindowState( QtCore.Qt.WindowFullScreen )
 	elif boundData["maximized"] and sys.platform != "darwin" :
 		window.setWindowState( QtCore.Qt.WindowMaximized )
 	else :
 		window.setWindowState( QtCore.Qt.WindowNoState )
-
+		screenGeom = targetScreen.availableGeometry()
+		window.setGeometry(
+			( boundData["bound"].min()[0] * screenGeom.width() ) + screenGeom.x(),
+			( ( 1.0 - boundData["bound"].max()[1] ) * screenGeom.height() ) + screenGeom.y(),
+			( boundData["bound"].size()[0] * screenGeom.width() ),
+			( boundData["bound"].size()[1] * screenGeom.height() )
+		)
 
 def _reprDict( d ) :
 
@@ -1484,9 +1462,6 @@ from GafferUI.Frame import Frame as _Frame
 
 class _PinningWidget( _Frame ) :
 
-	__drivenEditorGroupMapping = {}
-	__drivenEditorNumGroups = 4
-
 	def __init__( self ) :
 
 		_Frame.__init__( self, borderWidth = 0, borderStyle = GafferUI.Frame.BorderStyle.None_ )
@@ -1496,22 +1471,22 @@ class _PinningWidget( _Frame ) :
 		row = GafferUI.ListContainer( orientation = GafferUI.ListContainer.Orientation.Horizontal )
 		with row :
 
+			self.__bookmarkNumber = GafferUI.Label( horizontalAlignment=GafferUI.Label.HorizontalAlignment.Right )
+			self.__bookmarkNumber.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ) )
+
 			self.__icon = GafferUI.Button( hasFrame=False, highlightOnOver=False )
 			self.__icon._qtWidget().setFixedHeight( 13 )
 			self.__icon._qtWidget().setFixedWidth( 13 )
-			self.__icon.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ), scoped=False )
+			self.__icon.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ) )
 
-			self.__bookmarkNumber = GafferUI.Label( horizontalAlignment=GafferUI.Label.HorizontalAlignment.Right )
-			self.__bookmarkNumber.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ), scoped=False )
 
-			self.__menuButton = GafferUI.Button( image="collapsibleArrowDown.png", hasFrame=False, highlightOnOver=False )
+			self.__menuButton = GafferUI.Button( image="menuIndicator.png", hasFrame=False, highlightOnOver=False )
 			self.__menuButton._qtWidget().setObjectName( "menuDownArrow" )
-			self.__menuButton.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ), scoped=False )
+			self.__menuButton.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ) )
 
 		self.addChild( row )
 
-		self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ), scoped=False )
-		self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ), scoped = False )
+		self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__showEditorFocusMenu ) )
 
 	@staticmethod
 	def editorKeyPress( editor, event ) :
@@ -1521,6 +1496,9 @@ class _PinningWidget( _Frame ) :
 
 		if event.key == "N" and not event.modifiers :
 			_PinningWidget.__followNodeSelection( editor )
+			return True
+		elif event.key == "QuoteLeft" :
+			_PinningWidget.__followFocusNode( editor )
 			return True
 		elif event.key == "P" and not event.modifiers :
 			_PinningWidget.__pinToNodeSelection( editor )
@@ -1539,20 +1517,14 @@ class _PinningWidget( _Frame ) :
 
 		# Icon
 
-		drivingEditor, mode = editor.getNodeSetDriver()
-
-		if drivingEditor is not None :
-			icon = "nodeSetDriver%s.png" % mode
-		elif not editor.getNodeSet().isSame( editor.scriptNode().selection() ) :
-			icon = "nodeSet%s.png"  % editor.getNodeSet().__class__.__name__
+		if editor.getNodeSet().isSame( editor.scriptNode().selection() ) :
+			icon = "nodeSetNodeSelection.png"
+		elif editor.getNodeSet().isSame( editor.scriptNode().focusSet() ) :
+			icon = "nodeSetFocusNode.png"
 		else :
-			icon = "nodeSetDriverNodeSelection.png"
+			icon = "nodeSet%s.png"  % editor.getNodeSet().__class__.__name__
 
-		# Make sure we don't break if an image is missing when setImage throws
-		try :
-			self.__icon.setImage( icon )
-		except Exception as e :
-			sys.stderr.write( str(e) )
+		self.__icon.setImage( icon )
 
 		# Bookmark set numeric indicator
 
@@ -1564,19 +1536,6 @@ class _PinningWidget( _Frame ) :
 			self.__bookmarkNumber.setVisible( False )
 			self.__bookmarkNumber.setText( "" )
 
-		# Link group
-
-		linkGroupIndex = None
-
-		masterEditor = editor.drivingEditor()
-		drivenEditors = editor.drivenNodeSets( recurse = True ).keys()
-
-		if masterEditor is not None :
-			linkGroupIndex = self.__drivenEditorGroup( masterEditor )
-		elif drivenEditors :
-			linkGroupIndex = self.__drivenEditorGroup( editor )
-
-		self._qtWidget().setProperty( "linkGroup", linkGroupIndex )
 		self._repolish()
 
 	# Disclaimer:
@@ -1596,24 +1555,16 @@ class _PinningWidget( _Frame ) :
 
 		toolTipElements = []
 
-		masterEditor = editor.drivingEditor()
-		drivingEditor, mode = editor.getNodeSetDriver()
-
-		if masterEditor is not None and masterEditor != drivingEditor :
-			toolTipElements.append( "Master editor _%s_" % masterEditor.getTitle() )
-
-		if drivingEditor is not None :
-			description = GafferUI.NodeSetEditor.nodeSetDriverModeDescription( mode )
-			toolTipElements.append( "" )
-			toolTipElements.append( description.format( editor = "_%s_" % drivingEditor.getTitle() ) )
-
 		nodeSet = editor.getNodeSet()
 		if nodeSet == editor.scriptNode().selection() :
 			toolTipElements.append( "" )
 			toolTipElements.append( "Following the node selection." )
+		if nodeSet == editor.scriptNode().focusSet() :
+			toolTipElements.append( "" )
+			toolTipElements.append( "Following the Focus Node." )
 		elif isinstance( nodeSet, Gaffer.NumericBookmarkSet ) :
 			toolTipElements.append( "" )
-			toolTipElements.append( "Following Bookmark %d." % nodeSet.getBookmark()  )
+			toolTipElements.append( "Following Numeric Bookmark %d." % nodeSet.getBookmark()  )
 		elif isinstance( nodeSet, Gaffer.StandardSet ) :
 			toolTipElements.append( "" )
 			n = len(nodeSet)
@@ -1622,15 +1573,6 @@ class _PinningWidget( _Frame ) :
 			else :
 				s = "Pinned to %d node%s." % ( n, "" if n == 1 else "s" )
 			toolTipElements.append( s )
-
-		drivenEditors = editor.drivenNodeSets( recurse = True ).keys()
-		if drivenEditors :
-			toolTipElements.append( "" )
-			toolTipElements.append( "Followed by:" )
-			for d in drivenEditors :
-				toolTipElements.append( " - _%s_" % d.getTitle() )
-
-		self.__highlightRelatedEditors( editor, True )
 
 		return "\n".join( toolTipElements )
 
@@ -1650,10 +1592,17 @@ class _PinningWidget( _Frame ) :
 
 		editor.setNodeSet( editor.scriptNode().selection() )
 
+	@staticmethod
+	def __followFocusNode( editor, *unused ) :
+
+		if not isinstance( editor, GafferUI.NodeSetEditor ) :
+			editor = editor()
+
+		editor.setNodeSet( editor.scriptNode().focusSet() )
+
 	def __showEditorFocusMenu( self, *unused ) :
 
-		tabbedContainer = self.ancestor( _TabbedContainer )
-		e = tabbedContainer.getCurrent()
+		e = self.__getNodeSetEditor()
 
 		m = IECore.MenuDefinition()
 
@@ -1672,25 +1621,33 @@ class _PinningWidget( _Frame ) :
 
 	def __addStandardItems( self, editor, m ) :
 
-		# @see CompoundEditor.nodeSetMenuSignal for details on the structure
-		# of this menu.
+		selection = editor.scriptNode().selection()
 
-		drivingEditor, _ = editor.getNodeSetDriver()
-
-		m.append( "/Follow Divider", { "divider" : True, "label" : "Follow" } )
-
-		m.append( "/Node Selection", {
-			"command" : functools.partial( self.__followNodeSelection, weakref.ref( editor ) ),
-			"checkBox" : drivingEditor is None and editor.getNodeSet().isSame( editor.scriptNode().selection() ),
-			"shortCut" : "n"
-		} )
-
-		m.append( "/Pin Divider", { "divider" : True, "label" : "Pin" } )
+		if len(selection) == 0 :
+			label = "Pin To Nothing"
+		elif len(selection) == 1 :
+			label = "Pin %s" % selection[0].getName()
+		else :
+			label = "Pin %d Selected Nodes" % len(selection)
 
 		m.append( "/Pin Node Selection", {
 			"command" : functools.partial( self.__pinToNodeSelection, weakref.ref( editor ) ),
-			"label" : "Node Selection",
+			"label" : label,
 			"shortCut" : "p"
+		} )
+
+		m.append( "/Follow Divider", { "divider" : True, "label" : "Follow" } )
+
+		m.append( "/Focus Node", {
+			"command" : functools.partial( self.__followFocusNode, weakref.ref( editor ) ),
+			"checkBox" : editor.getNodeSet().isSame( editor.scriptNode().focusSet() ),
+			"shortCut" : "`"
+		} )
+
+		m.append( "/Node Selection", {
+			"command" : functools.partial( self.__followNodeSelection, weakref.ref( editor ) ),
+			"checkBox" : editor.getNodeSet().isSame( editor.scriptNode().selection() ),
+			"shortCut" : "n"
 		} )
 
 	def __getNodeSetEditor( self ) :
@@ -1704,15 +1661,8 @@ class _PinningWidget( _Frame ) :
 
 	def __getBookmarkSet( self ) :
 
-		tabbedContainer = self.ancestor( _TabbedContainer )
-		editor = tabbedContainer.getCurrent()
-		if editor is None or not isinstance( editor, GafferUI.NodeSetEditor ) :
-			return None
-
-		# We don't display for driven editors as they will have
-		# a different appearance, so only return if we're a master
-		driver, _ = editor.getNodeSetDriver()
-		if driver is not None :
+		editor = self.__getNodeSetEditor()
+		if editor is None:
 			return None
 
 		nodeSet = editor.getNodeSet()
@@ -1721,50 +1671,26 @@ class _PinningWidget( _Frame ) :
 
 		return None
 
-	@staticmethod
-	def __highlightRelatedEditors( editor, highlighted ) :
+Gaffer.Metadata.registerNode(
 
-		toHighlight = []
+	CompoundEditor.Settings,
 
-		masterEditor = editor.drivingEditor()
-		if masterEditor is not None :
-			toHighlight.append( masterEditor )
-		else :
-			toHighlight.extend( editor.drivenNodeSets( recurse = True ).keys() )
+	plugs = {
 
-		for e in toHighlight :
-			if e._qtWidget().isHidden() :
-				e.parent().parent().setHighlighted( highlighted )
-			else :
-				e.parent().setHighlighted( highlighted )
+		"*" : [
 
-	def __leave( self, widget ) :
+			"label", "",
 
-		tabbedContainer = self.ancestor( _TabbedContainer )
-		editor = self.__getNodeSetEditor()
-		if editor is None :
-			return
+		],
 
-		self.__highlightRelatedEditors( editor, False )
+		"editScope" : [
 
-	@classmethod
-	def __drivenEditorGroup( cls, editor ) :
+			"plugValueWidget:type", "GafferUI.EditScopeUI.EditScopePlugValueWidget",
+			"layout:width", 185,
+			"editScopePlugValueWidget:showLabel", True,
 
-		for weakEditor, index in cls.__drivenEditorGroupMapping.items() :
-			if weakEditor() is editor :
-				return index
+		],
 
-		# We want the group index to be kept per-script, not per gaffer process
-		# so the CompoundEditor is a good place. Fall-back on the scriptNode
+	}
 
-		e = editor.ancestor( GafferUI.CompoundEditor )
-		if e is None :
-			e = editor.scriptNode()
-		if not hasattr( e, '_PinningWidget__lastIndexUsed' ) :
-			e.__lastIndexUsed = -1
-
-		index = ( e.__lastIndexUsed + 1 ) % cls.__drivenEditorNumGroups
-		cls.__drivenEditorGroupMapping[ weakref.ref( editor ) ] =  index
-		e.__lastIndexUsed = index
-		return index
-
+)

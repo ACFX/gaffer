@@ -95,6 +95,15 @@ Gaffer.Metadata.registerNode(
 
 		),
 
+		"..." : (
+
+			# Just because a plug is renameable and/or deletable on one node
+			# does not mean it should still be when promoted to another.
+			"renameable:promotable", False,
+			"deletable:promotable", False,
+
+		),
+
 	}
 
 )
@@ -104,8 +113,6 @@ Gaffer.Metadata.registerNode(
 ##########################################################################
 
 ## This class forms the base class for all uis for nodes.
-## \todo: We should provide setContext()/getContext() methods
-## as Editor and PlugValueWidget do.
 class NodeUI( GafferUI.Widget ) :
 
 	def __init__( self, node, topLevelWidget, **kw ) :
@@ -113,7 +120,6 @@ class NodeUI( GafferUI.Widget ) :
 		GafferUI.Widget.__init__( self, topLevelWidget, **kw )
 
 		self.__node = node
-		self.__readOnly = False
 
 	## Returns the node the ui represents.
 	def node( self ) :
@@ -127,17 +133,6 @@ class NodeUI( GafferUI.Widget ) :
 	def plugValueWidget( self, plug ) :
 
 		return None
-
-	## \deprecated
-	def setReadOnly( self, readOnly ) :
-
-		assert( isinstance( readOnly, bool ) )
-		self.__readOnly = readOnly
-
-	## \deprecated
-	def getReadOnly( self ) :
-
-		return self.__readOnly
 
 	## Creates a NodeUI instance for the specified node.
 	@classmethod
@@ -168,9 +163,7 @@ class NodeUI( GafferUI.Widget ) :
 	@staticmethod
 	def appendPlugDeletionMenuDefinitions( plugOrPlugValueWidget, menuDefinition ) :
 
-		readOnlyUI = False
 		if isinstance( plugOrPlugValueWidget, GafferUI.PlugValueWidget ) :
-			readOnlyUI = plugOrPlugValueWidget.getReadOnly()
 			plug = plugOrPlugValueWidget.getPlug()
 		else :
 			plug = plugOrPlugValueWidget
@@ -186,7 +179,7 @@ class NodeUI( GafferUI.Widget ) :
 		if len( menuDefinition.items() ) :
 			menuDefinition.append( "/DeleteDivider", { "divider" : True } )
 
-		menuDefinition.append( "/Delete", { "command" : functools.partial( NodeUI.__deletePlug, plug ), "active" : not readOnlyUI and not Gaffer.MetadataAlgo.readOnly( plug ) } )
+		menuDefinition.append( "/Delete", { "command" : functools.partial( NodeUI.__deletePlug, plug ), "active" : not Gaffer.MetadataAlgo.readOnly( plug ) } )
 
 	@staticmethod
 	def __deletePlug( plug ) :

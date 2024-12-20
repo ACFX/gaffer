@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_MIX_H
-#define GAFFERIMAGE_MIX_H
+#pragma once
 
 #include "GafferImage/ImagePlug.h"
 #include "GafferImage/ImageProcessor.h"
@@ -54,10 +53,10 @@ class GAFFERIMAGE_API Mix : public ImageProcessor
 
 	public :
 
-		Mix( const std::string &name=defaultName<Mix>() );
+		explicit Mix( const std::string &name=defaultName<Mix>() );
 		~Mix() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Mix, MixTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Mix, MixTypeId, ImageProcessor );
 
 		GafferImage::ImagePlug *maskPlug();
 		const GafferImage::ImagePlug *maskPlug() const;
@@ -98,5 +97,3 @@ class GAFFERIMAGE_API Mix : public ImageProcessor
 IE_CORE_DECLAREPTR( Mix )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_MIX_H

@@ -37,7 +37,6 @@
 import unittest
 
 import imath
-import six
 
 import IECore
 
@@ -53,8 +52,9 @@ class ShufflePlugTest( GafferTest.TestCase ) :
 		self.assertEqual( p["enabled"].defaultValue(), True )
 		self.assertEqual( p["destination"].defaultValue(), "" )
 		self.assertEqual( p["deleteSource"].defaultValue(), False )
+		self.assertEqual( p["replaceDestination"].defaultValue(), True )
 
-		p = Gaffer.ShufflePlug( source = "foo", destination = "bar", deleteSource = True, enabled = False )
+		p = Gaffer.ShufflePlug( source = "foo", destination = "bar", deleteSource = True, enabled = False, replaceDestination = False )
 		self.assertEqual( p["source"].defaultValue(), "" )
 		self.assertEqual( p["source"].getValue(), "foo" )
 		self.assertEqual( p["enabled"].defaultValue(), True )
@@ -63,6 +63,8 @@ class ShufflePlugTest( GafferTest.TestCase ) :
 		self.assertEqual( p["destination"].getValue(), "bar" )
 		self.assertEqual( p["deleteSource"].defaultValue(), False )
 		self.assertEqual( p["deleteSource"].getValue(), True )
+		self.assertEqual( p["replaceDestination"].defaultValue(), True )
+		self.assertEqual( p["replaceDestination"].getValue(), False )
 
 		p2 = Gaffer.ShufflesPlug()
 		self.assertFalse( p.acceptsChild( Gaffer.Plug() ) )
@@ -171,14 +173,47 @@ class ShufflePlugTest( GafferTest.TestCase ) :
 			} )
 		)
 
-	def testCantReuseDestination( self ) :
+	def testReuseDestination( self ) :
 
 		p = Gaffer.ShufflesPlug()
 		p.addChild( Gaffer.ShufflePlug( source = "foo", destination = "baz" ) )
 		p.addChild( Gaffer.ShufflePlug( source = "bar", destination = "baz" ) )
 
 		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ) } )
-		six.assertRaisesRegex( self, RuntimeError, '.*this destination was already written.*', p.shuffle, source )
+		dest = p.shuffle( source )
+		self.assertEqual(
+			dest,
+			IECore.CompoundObject( {
+				"foo" : IECore.FloatData( 0.5 ),
+				"bar" : IECore.FloatData( 1.0 ),
+				"baz" : IECore.FloatData( 1.0 ),
+			} )
+		)
+
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "bar", destination = "baz" ) )
+		p.addChild( Gaffer.ShufflePlug( source = "foo", destination = "baz" ) )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ) } )
+		dest = p.shuffle( source )
+		self.assertEqual(
+			dest,
+			IECore.CompoundObject( {
+				"foo" : IECore.FloatData( 0.5 ),
+				"bar" : IECore.FloatData( 1.0 ),
+				"baz" : IECore.FloatData( 0.5 ),
+			} )
+		)
+
+	def testIdentityWorksAsUsual( self ) :
+
+		# Unlike in an earlier version, shuffling from "bar" to "bar" works as normal ( in this case,
+		# creating a collision because two sources write to the same destination ).
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "*", destination = "bar" ) )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ) } )
+		self.assertRaisesRegex( RuntimeError, 'cannot write from multiple sources to destination "bar"', p.shuffle, source )
 
 	def testNoReShuffle( self ) :
 
@@ -241,11 +276,11 @@ class ShufflePlugTest( GafferTest.TestCase ) :
 
 		# without the ${source} variable in the destination, our "*" match causes collisions
 		p[0]["destination"].setValue( "allValuesCollide" )
-		six.assertRaisesRegex( self, RuntimeError, '.*this destination was already written.*', p.shuffle, source )
+		self.assertRaisesRegex( RuntimeError, '.*cannot write from multiple sources to destination.*', p.shuffle, source )
 
 		# other substitution variables can also cause collisions
 		p[0]["destination"].setValue( "foo#" )
-		six.assertRaisesRegex( self, RuntimeError, '.*this destination was already written.*', p.shuffle, source )
+		self.assertRaisesRegex( RuntimeError, '.*cannot write from multiple sources to destination.*', p.shuffle, source )
 
 	def testDrivenDestination( self ) :
 
@@ -253,10 +288,23 @@ class ShufflePlugTest( GafferTest.TestCase ) :
 		script["n"] = Gaffer.Node()
 		script["n"]["p"] = Gaffer.ShufflesPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		script["n"]["p"].addChild( Gaffer.ShufflePlug( name = "s", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
-		script["n"]["p"]["s"]["source"].setValue( "*" )
+		script["n"]["p"]["s"]["source"].setValue( "foo" )
 		script["expr"] = Gaffer.Expression()
 		script["expr"].setExpression( 'parent["n"]["p"]["s"]["destination"] = context["source"] + ":bar"' )
 
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ) } )
+		dest = script["n"]["p"].shuffle( source )
+		self.assertEqual(
+			dest,
+			IECore.CompoundObject( {
+				"foo" : IECore.FloatData( 0.5 ),
+				"foo:bar" : IECore.FloatData( 0.5 ),
+				"baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ),
+			} )
+		)
+
+		# source with wildcard
+		script["n"]["p"]["s"]["source"].setValue( "*" )
 		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ) } )
 		dest = script["n"]["p"].shuffle( source )
 		self.assertEqual(
@@ -274,7 +322,35 @@ class ShufflePlugTest( GafferTest.TestCase ) :
 		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ) } )
 		with Gaffer.Context() as c :
 			c["notSource"] = "bongo"
-			six.assertRaisesRegex( self, RuntimeError, '.*this destination was already written.*', script["n"]["p"].shuffle, source )
+			self.assertRaisesRegex( RuntimeError, '.*cannot write from multiple sources to destination.*', script["n"]["p"].shuffle, source )
+
+	def testDrivenSource( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["n"] = Gaffer.Node()
+		script["n"]["p"] = Gaffer.ShufflesPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		script["n"]["p"].addChild( Gaffer.ShufflePlug( name = "s", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		script["srcExpr"] = Gaffer.Expression()
+		script["srcExpr"].setExpression( 'parent["n"]["p"]["s"]["source"] = context["source"]' )
+		script["dstExpr"] = Gaffer.Expression()
+		script["dstExpr"].setExpression( 'parent["n"]["p"]["s"]["destination"] = context["source"] + ":bar"' )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ) } )
+		self.assertRaisesRegex( RuntimeError, '.*Context has no variable named \"source\".*', script["n"]["p"].shuffle, source )
+
+		# source expression using predefined source variable
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ) } )
+		with Gaffer.Context() as c :
+			c["source"] = "baz"
+			dest = script["n"]["p"].shuffle( source )
+			self.assertEqual(
+				dest,
+				IECore.CompoundObject( {
+					"foo" : IECore.FloatData( 0.5 ),
+					"baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ),
+					"baz:bar" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ),
+				} )
+			)
 
 	def testCantDeleteDestination( self ) :
 
@@ -325,6 +401,118 @@ class ShufflePlugTest( GafferTest.TestCase ) :
 				"bongo" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ),
 			} )
 		)
+
+	def testReplaceDestination( self ) :
+
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "foo", destination = "bar", replaceDestination = False ) )
+		p.addChild( Gaffer.ShufflePlug( source = "baz", destination = "bongo", replaceDestination = True ) )
+
+		source = IECore.CompoundData( { "foo" : 0.5, "bar" : 1.5, "baz" : imath.Color3f( 1, 2, 3 ), "bongo" : imath.Color3f( 4, 5, 6 ) } )
+		dest = p.shuffle( source )
+		self.assertEqual(
+			dest,
+			IECore.CompoundData( {
+				"foo" : IECore.FloatData( 0.5 ),
+				"bar" : IECore.FloatData( 1.5 ),
+				"baz" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ),
+				"bongo" : IECore.Color3fData( imath.Color3f( 1, 2, 3 ) ),
+			} )
+		)
+
+	def testReplaceDestinationNoReuseDestination( self ) :
+
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "*", destination = "bar" ) )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ), "baz" : IECore.FloatData( 1.5 ) } )
+		self.assertRaisesRegex( RuntimeError, '.*cannot write from multiple sources to destination.*', p.shuffle, source )
+
+		# clashing destinations are detected regardless of replace destination
+		p[0]["replaceDestination"].setValue( False )
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ), "baz" : IECore.FloatData( 1.5 ) } )
+		self.assertRaisesRegex( RuntimeError, '.*cannot write from multiple sources to destination.*', p.shuffle, source )
+
+	def testIdentityNoDeleteSource( self ) :
+
+		# simple
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "foo", destination = "foo", deleteSource = True ) )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ) } )
+		dest = p.shuffle( source )
+		self.assertEqual( dest, source )
+
+		# source wildcard
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "*", destination = "foo", deleteSource = True ) )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ) } )
+		dest = p.shuffle( source )
+		self.assertEqual( dest, source )
+
+		# source wildcard destination substitution
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "*", destination = "${source}", deleteSource = True ) )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ) } )
+		dest = p.shuffle( source )
+		self.assertEqual( dest, source )
+
+		# no source wildcard destination substitution
+		p = Gaffer.ShufflesPlug()
+		p.addChild( Gaffer.ShufflePlug( source = "foo", destination = "${source}", deleteSource = True ) )
+
+		source = IECore.CompoundObject( { "foo" : IECore.FloatData( 0.5 ), "bar" : IECore.FloatData( 1.0 ) } )
+		dest = p.shuffle( source )
+		self.assertEqual( dest, source )
+
+	def testIgnoreMissingSource( self ) :
+
+		plug = Gaffer.ShufflesPlug()
+		plug.addChild( Gaffer.ShufflePlug( source = "foo", destination = "bar" ) )
+
+		source = IECore.CompoundData()
+		self.assertEqual( plug.shuffle( source ), IECore.CompoundData() )
+		self.assertEqual( plug.shuffle( source, ignoreMissingSource = True ), IECore.CompoundData() )
+		with self.assertRaisesRegex( RuntimeError, "Source \"foo\" does not exist" ) :
+			plug.shuffle( source, ignoreMissingSource = False )
+
+		# Wildcards that don't match anything are not considered to be missing.
+		plug[0]["source"].setValue( "foo*" )
+		self.assertEqual( plug.shuffle( source ), IECore.CompoundData() )
+		self.assertEqual( plug.shuffle( source, ignoreMissingSource = True ), IECore.CompoundData() )
+		self.assertEqual( plug.shuffle( source, ignoreMissingSource = False ), IECore.CompoundData() )
+
+	def testExtraSources( self ) :
+
+		plug = Gaffer.ShufflesPlug()
+		plug.addChild( Gaffer.ShufflePlug( source = "foo", destination = "bar" ) )
+
+		source = IECore.CompoundData()
+		extraSources = IECore.CompoundData( { "foo" : 10 } )
+		self.assertEqual( plug.shuffleWithExtraSources( source, extraSources ), IECore.CompoundData( { "bar" : 10 } ) )
+
+		# Wildcards are not looked up in `extraSources`.
+		plug[0]["source"].setValue( "foo*" )
+		self.assertEqual( plug.shuffleWithExtraSources( source, extraSources ), IECore.CompoundData() )
+
+		# `ignoreMissingSource` has the same meaning as for `shuffle()`
+		plug[0]["source"].setValue( "toto" )
+		self.assertEqual( plug.shuffleWithExtraSources( source, extraSources ), IECore.CompoundData() )
+		self.assertEqual( plug.shuffleWithExtraSources( source, extraSources, ignoreMissingSource = True ), IECore.CompoundData() )
+		with self.assertRaisesRegex( RuntimeError, "Source \"toto\" does not exist" ) :
+			plug.shuffleWithExtraSources( source, extraSources, ignoreMissingSource = False )
+
+		# An extra source of `*` matches anything
+		extraSources["*"] = 20
+		self.assertEqual( plug.shuffleWithExtraSources( source, extraSources ), IECore.CompoundData( { "bar" : 20 } ) )
+		self.assertEqual( plug.shuffleWithExtraSources( source, extraSources, ignoreMissingSource = False ), IECore.CompoundData( { "bar" : 20 } ) )
+
+		# When using an extra source of `*`, we should be able to create a new value with a fallback by shuffling
+		# from "toto" to "toto"
+		plug[0]["destination"].setValue( "toto" )
+		self.assertEqual( plug.shuffleWithExtraSources( source, extraSources ), IECore.CompoundData( { "toto" : 20 } ) )
 
 if __name__ == "__main__":
 	unittest.main()

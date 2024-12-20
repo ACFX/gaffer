@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERARNOLD_ARNOLDDISPLACEMENT_H
-#define GAFFERARNOLD_ARNOLDDISPLACEMENT_H
+#pragma once
 
 #include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
@@ -57,10 +56,10 @@ class GAFFERARNOLD_API ArnoldDisplacement : public GafferScene::Shader
 
 	public :
 
-		ArnoldDisplacement( const std::string &name=defaultName<ArnoldDisplacement>() );
+		explicit ArnoldDisplacement( const std::string &name=defaultName<ArnoldDisplacement>() );
 		~ArnoldDisplacement() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldDisplacement, ArnoldDisplacementTypeId, GafferScene::Shader );
+		GAFFER_NODE_DECLARE_TYPE( GafferArnold::ArnoldDisplacement, ArnoldDisplacementTypeId, GafferScene::Shader );
 
 		GafferScene::ShaderPlug *mapPlug();
 		const GafferScene::ShaderPlug *mapPlug() const;
@@ -97,5 +96,3 @@ class GAFFERARNOLD_API ArnoldDisplacement : public GafferScene::Shader
 IE_CORE_DECLAREPTR( ArnoldDisplacement )
 
 } // namespace GafferArnold
-
-#endif // GAFFERARNOLD_ARNOLDDISPLACEMENT_H

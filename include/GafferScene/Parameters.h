@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_PARAMETERS_H
-#define GAFFERSCENE_PARAMETERS_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERSCENE_API Parameters : public ObjectProcessor
 
 	public :
 
-		Parameters( const std::string &name=defaultName<Parameters>() );
+		explicit Parameters( const std::string &name=defaultName<Parameters>() );
 		~Parameters() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Parameters, ParametersTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Parameters, ParametersTypeId, ObjectProcessor );
 
 		Gaffer::CompoundDataPlug *parametersPlug();
 		const Gaffer::CompoundDataPlug *parametersPlug() const;
@@ -72,5 +71,3 @@ class GAFFERSCENE_API Parameters : public ObjectProcessor
 IE_CORE_DECLAREPTR( Parameters )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_PARAMETERS_H

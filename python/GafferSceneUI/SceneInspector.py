@@ -35,20 +35,15 @@
 #
 ##########################################################################
 
+import enum
 import math
 import difflib
+import html
 import itertools
 import collections
 import functools
-import six
-import imath
 
-# These modules are not interchangeable in general, but we only
-# use the `escape()` function which is present in both.
-if six.PY3 :
-	import html
-else :
-	import cgi as html
+import imath
 
 import IECore
 import IECoreScene
@@ -59,7 +54,7 @@ import GafferScene
 import GafferUI
 import GafferSceneUI
 
-class SceneInspector( GafferUI.NodeSetEditor ) :
+class SceneInspector( GafferSceneUI.SceneEditor ) :
 
 	## Simple class to specify the target of an inspection,
 	# and provide cached queries for that target.
@@ -152,13 +147,21 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 
 			return self.__sets[setName]
 
+	class Settings( GafferSceneUI.SceneEditor.Settings ) :
+
+		def __init__( self ) :
+
+			GafferSceneUI.SceneEditor.Settings.__init__( self, numInputs = 2 )
+
+	IECore.registerRunTimeTyped( Settings, typeName = "GafferSceneUI::SceneInspector::Settings" )
+
 	## A list of Section instances may be passed to create a custom inspector,
 	# otherwise all registered Sections will be used.
 	def __init__( self, scriptNode, sections = None, **kw ) :
 
 		mainColumn = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, borderWidth = 8 )
 
-		GafferUI.NodeSetEditor.__init__( self, mainColumn, scriptNode, **kw )
+		GafferSceneUI.SceneEditor.__init__( self, mainColumn, scriptNode, **kw )
 
 		self.__sections = []
 
@@ -182,7 +185,7 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 				column = columns.get( registration.tab )
 				if column is None :
 					with tabbedContainer :
-						with GafferUI.ScrolledContainer( horizontalMode = GafferUI.ScrollMode.Never, parenting = { "label" : registration.tab } ) :
+						with GafferUI.ScrolledContainer( horizontalMode = GafferUI.ScrollMode.Automatic, parenting = { "label" : registration.tab } ) :
 							column = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, borderWidth = 4, spacing = 8 )
 							columns[registration.tab] = column
 				column.append( section )
@@ -191,6 +194,10 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 			for tab, column in columns.items() :
 				if tab is not None :
 					column.append( GafferUI.Spacer( imath.V2i( 0 ) ), expand = True )
+
+		GafferSceneUI.ScriptNodeAlgo.selectedPathsChangedSignal( scriptNode ).connect(
+			Gaffer.WeakMethod( self.__selectedPathsChanged )
+		)
 
 		self.__targetPaths = None
 		self._updateFromSet()
@@ -225,44 +232,22 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 
 		return "GafferSceneUI.SceneInspector( scriptNode )"
 
-	def _updateFromSet( self ) :
+	def _updateFromSettings( self, plug ) :
 
-		GafferUI.NodeSetEditor._updateFromSet( self )
-
-		self.__scenePlugs = []
-		self.__plugDirtiedConnections = []
-		self.__parentChangedConnections = []
-		for node in self.getNodeSet()[-2:] :
-			outputScenePlug = next( GafferScene.ScenePlug.RecursiveOutputRange( node ), None )
-			if outputScenePlug :
-				self.__scenePlugs.append( outputScenePlug )
-				self.__plugDirtiedConnections.append( node.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) ) )
-				self.__parentChangedConnections.append( outputScenePlug.parentChangedSignal().connect( Gaffer.WeakMethod( self.__plugParentChanged ) ) )
-
-		self.__updateLazily()
+		if plug.isSame( self.settings()["in"] ) :
+			self.__updateLazily()
 
 	def _updateFromContext( self, modifiedItems ) :
 
 		for item in modifiedItems :
-			if not item.startswith( "ui:" ) or ( GafferSceneUI.ContextAlgo.affectsSelectedPaths( item ) and self.__targetPaths is None ) :
+			if not item.startswith( "ui:" ) :
 				self.__updateLazily()
 				break
 
-	def _titleFormat( self ) :
+	def __selectedPathsChanged( self, scriptNode ) :
 
-		return GafferUI.NodeSetEditor._titleFormat( self, _maxNodes = 2, _reverseNodes = True, _ellipsis = False )
-
-	def __plugDirtied( self, plug ) :
-
-		if isinstance( plug, GafferScene.ScenePlug ) and plug.direction() == Gaffer.Plug.Direction.Out :
+		if self.__targetPaths is None :
 			self.__updateLazily()
-
-	def __plugParentChanged( self, plug, oldParent ) :
-
-		# if a plug has been removed or moved to another node, then
-		# we need to stop viewing it - _updateFromSet() will find the
-		# next suitable plug from the current node set.
-		self._updateFromSet()
 
 	@GafferUI.LazyMethod( deferUntilPlaybackStops = True )
 	def __updateLazily( self ) :
@@ -273,26 +258,27 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 
 		# The SceneInspector's internal context is not necessarily bound at this point, which can lead to errors
 		# if nodes in the graph are expecting special context variables, so we make sure it is:
-		with self.getContext():
+		with self.context():
 
-			assert( len( self.__scenePlugs ) <= 2 )
+			scenes = [ s.getInput() for s in self.settings()["in"] if s.getInput() is not None ]
+			assert( len( scenes ) <= 2 )
 
 			paths = [ None ]
 			if self.__targetPaths is not None :
 				paths = self.__targetPaths
 			else :
-				lastSelectedPath = GafferSceneUI.ContextAlgo.getLastSelectedPath( self.getContext() )
+				lastSelectedPath = GafferSceneUI.ScriptNodeAlgo.getLastSelectedPath( self.scriptNode() )
 				if lastSelectedPath :
 					paths = [ lastSelectedPath ]
-					selectedPaths = GafferSceneUI.ContextAlgo.getSelectedPaths( self.getContext() ).paths()
+					selectedPaths = GafferSceneUI.ScriptNodeAlgo.getSelectedPaths( self.scriptNode() ).paths()
 					if len( selectedPaths ) > 1 :
 						paths.insert( 0, next( p for p in selectedPaths if p != lastSelectedPath ) )
 
-			if len( self.__scenePlugs ) > 1 :
+			if len( scenes ) > 1 :
 				paths = [ paths[-1] ]
 
 			targets = []
-			for scene in self.__scenePlugs :
+			for scene in scenes :
 				for path in paths :
 					if path is not None and not scene.exists( path ) :
 						# selection may not be valid for both scenes,
@@ -338,7 +324,7 @@ class Diff( GafferUI.Widget ) :
 # with background colours appropriate to the relationship between the two.
 class SideBySideDiff( Diff ) :
 
-	Background = IECore.Enum.create( "A", "B", "AB", "Other" )
+	Background = enum.Enum( "Background", [ "A", "B", "AB", "Other" ] )
 
 	def __init__( self, **kw ) :
 
@@ -418,8 +404,8 @@ class SideBySideDiff( Diff ) :
 				continue
 
 			repolish = False
-			if str(backgrounds[i]) != frame._qtWidget().property( "gafferDiff" ) :
-				frame._qtWidget().setProperty( "gafferDiff", str(backgrounds[i]) )
+			if backgrounds[i].name != frame._qtWidget().property( "gafferDiff" ) :
+				frame._qtWidget().setProperty( "gafferDiff", backgrounds[i].name )
 				repolish = True
 
 			if i == 0 :
@@ -448,9 +434,9 @@ class TextDiff( SideBySideDiff ) :
 		for i in range( 0, 2 ) :
 			label = GafferUI.Label()
 			label._qtWidget().setSizePolicy( QtWidgets.QSizePolicy( QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed ) )
-			label.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
-			label.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
-			label.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
+			label.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
+			label.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
+			label.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
 			self.setValueWidget( i, label )
 
 		self.__highlightDiffs = highlightDiffs
@@ -484,7 +470,7 @@ class TextDiff( SideBySideDiff ) :
 			return self.__formatShaders( values )
 		elif isinstance( values[0], ( float, int ) ) :
 			return self.__formatNumbers( values )
-		elif isinstance( values[0], six.string_types ) :
+		elif isinstance( values[0], str ) :
 			return self.__formatStrings( [ str( v ) for v in values ] )
 		else :
 			return [ html.escape( str( v ) ) for v in values ]
@@ -564,7 +550,7 @@ class TextDiff( SideBySideDiff ) :
 				formattedValues.append( "Missing output shader" )
 				continue
 			shaderName = shader.name
-			nodeName = shader.blindData().get( "gaffer:nodeName", None )
+			nodeName = shader.blindData().get( "label", shader.blindData().get( "gaffer:nodeName", None ) )
 
 			formattedValue = "<table cellspacing=2><tr>"
 			if nodeName is not None :
@@ -783,9 +769,9 @@ class DiffRow( Row ) :
 
 			diffWidgets = [ diff.getValueWidget( 0 ), diff.getValueWidget( 1 ) ] if isinstance( diff, SideBySideDiff ) else [ diff ]
 			for diffWidget in diffWidgets :
-				diffWidget.enterSignal().connect( Gaffer.WeakMethod( self.__enter ), scoped = False )
-				diffWidget.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ), scoped = False )
-				diffWidget.contextMenuSignal().connect( Gaffer.WeakMethod( self.__contextMenu ), scoped = False )
+				diffWidget.enterSignal().connect( Gaffer.WeakMethod( self.__enter ) )
+				diffWidget.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ) )
+				diffWidget.contextMenuSignal().connect( Gaffer.WeakMethod( self.__contextMenu ) )
 
 			if inspector._useBackgroundThread() :
 				GafferUI.BusyWidget( size = 22, busy = False )
@@ -797,6 +783,10 @@ class DiffRow( Row ) :
 				hasFrame = False,
 				menu = GafferUI.Menu( Gaffer.WeakMethod( self.__menuDefinition ) )
 			)
+
+			label.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
+			label.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
+			label.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
 
 		self.__inspector = inspector
 		self.__diffCreator = diffCreator
@@ -1013,6 +1003,22 @@ class DiffRow( Row ) :
 		self.ancestor( GafferUI.Window ).addChildWindow( w, removeOnClose = True )
 		w.setVisible( True )
 
+	def __buttonPress( self, widget, event ) :
+
+		return event.buttons == event.Buttons.Left
+
+	def __dragBegin( self, widget, event ) :
+
+		if event.buttons != event.Buttons.Left :
+			return None
+
+		GafferUI.Pointer.setCurrent( "values" )
+		return self.__inspector.name() if self.__inspector else ""
+
+	def __dragEnd( self, widget, event ) :
+
+		GafferUI.Pointer.setCurrent( None )
+
 ##########################################################################
 # DiffColumn
 ##########################################################################
@@ -1044,9 +1050,9 @@ class DiffColumn( GafferUI.Widget ) :
 					self.__filterWidget = None
 					if filterable :
 						self.__filterWidget = GafferUI.TextWidget()
-						self.__filterWidget._qtWidget().setPlaceholderText( "Filter..." )
+						self.__filterWidget.setPlaceholderText( "Filter..." )
 						self.__filterWidget.textChangedSignal().connect(
-							Gaffer.WeakMethod( self.__filterTextChanged ), scoped = False
+							Gaffer.WeakMethod( self.__filterTextChanged )
 						)
 
 			self.__rowContainer = GafferUI.ListContainer()
@@ -1057,7 +1063,7 @@ class DiffColumn( GafferUI.Widget ) :
 		# this doesn't always get called by SceneInspector.__update(), so we grab the
 		# context from the ancestor NodeSetEditor if it exists, and make it current:
 		nodeSetEditor = self.ancestor( GafferUI.NodeSetEditor )
-		context = nodeSetEditor.getContext() if nodeSetEditor else Gaffer.Context.current()
+		context = nodeSetEditor.context() if nodeSetEditor else Gaffer.Context.current()
 
 		with context:
 
@@ -1230,7 +1236,7 @@ class _SectionWindow( GafferUI.Window ) :
 		# tricky because sections resize lazily when they are first shown.
 		self._qtWidget().resize( 400, 250 )
 
-		editor.getNodeSet().memberRemovedSignal().connect( Gaffer.WeakMethod( self.__nodeSetMemberRemoved ), scoped = False )
+		editor.getNodeSet().memberRemovedSignal().connect( Gaffer.WeakMethod( self.__nodeSetMemberRemoved ) )
 
 	def __nodeSetMemberRemoved( self, set, node ) :
 
@@ -1244,7 +1250,7 @@ from Qt import QtWidgets
 
 class _Rail( GafferUI.ListContainer ) :
 
-	Type = IECore.Enum.create( "Top", "Middle", "Gap", "Bottom", "Single" )
+	Type = enum.Enum( "Type", [ "Top", "Middle", "Gap", "Bottom", "Single" ] )
 
 	def __init__( self, type, **kw ) :
 
@@ -1262,7 +1268,7 @@ class _Rail( GafferUI.ListContainer ) :
 			else :
 				GafferUI.Spacer( imath.V2i( 1 ) )
 
-			GafferUI.Image( "rail" + str( type ) + ".png" )
+			GafferUI.Image( "rail" + type.name + ".png" )
 
 			if type != self.Type.Bottom and type != self.Type.Single :
 				image = GafferUI.Image( "railLine.png" )
@@ -1317,9 +1323,9 @@ class _InheritanceSection( Section ) :
 					if atEitherEnd or value is not None :
 						label = GafferUI.Label( path )
 						label.setToolTip( "Click to select \"%s\"" % path )
-						label.enterSignal().connect( lambda gadget : gadget.setHighlighted( True ), scoped = False )
-						label.leaveSignal().connect( lambda gadget : gadget.setHighlighted( False ), scoped = False )
-						label.buttonPressSignal().connect( Gaffer.WeakMethod( self.__labelButtonPress ), scoped = False )
+						label.enterSignal().connect( lambda gadget : gadget.setHighlighted( True ) )
+						label.leaveSignal().connect( lambda gadget : gadget.setHighlighted( False ) )
+						label.buttonPressSignal().connect( Gaffer.WeakMethod( self.__labelButtonPress ) )
 					else :
 						GafferUI.Label( "..." )
 
@@ -1341,8 +1347,7 @@ class _InheritanceSection( Section ) :
 	def __labelButtonPress( self, label, event ) :
 
 		script = self.__target.scene.ancestor( Gaffer.ScriptNode )
-		GafferSceneUI.ContextAlgo.setSelectedPaths( script.context(), IECore.PathMatcher( [ label.getText() ] ) )
-
+		GafferSceneUI.ScriptNodeAlgo.setSelectedPaths( script, IECore.PathMatcher( [ label.getText() ] ) )
 
 ##########################################################################
 # Shader section
@@ -1509,7 +1514,18 @@ class _HistorySection( Section ) :
 						_Rail( _Rail.Type.Middle )
 
 				if i == 0 or i == ( len( history ) - 1 ) or history[i-1].value != history[i].value :
-					GafferUI.NameLabel( history[i].target.scene.node(), formatter = lambda l : ".".join( x.getName() for x in l ) )
+					GafferUI.NameLabel(
+						history[i].target.scene.node(),
+						formatter = lambda l : ".".join( x.getName() for x in l ),
+						numComponents = self.__distance( history[i].target.scene.node().scriptNode(), history[i].target.scene.node() )
+					)
+					editButton = GafferUI.Button( image = "editOn.png", hasFrame = False )
+					if not Gaffer.MetadataAlgo.readOnly( history[i].target.scene.node() ) :
+						editButton.clickedSignal().connect(
+							functools.partial( _HistorySection.__editClicked, node = history[i].target.scene.node() )
+						)
+					else :
+						editButton.setEnabled( False )
 				else :
 					GafferUI.Label( "..." )
 
@@ -1547,6 +1563,23 @@ class _HistorySection( Section ) :
 			return SceneInspector.Target( sourceScene, target.path )
 
 		return None
+
+	@staticmethod
+	def __editClicked( button, node ) :
+
+		GafferUI.NodeEditor.acquire( node, floating = True )
+		return True
+
+	@staticmethod
+	## \todo This might make sense as part of a future GraphComponentAlgo.
+	def __distance( ancestor, descendant ) :
+
+		result = 0
+		while descendant is not None and descendant != ancestor :
+			result += 1
+			descendant = descendant.parent()
+
+		return result
 
 SceneInspector.HistorySection = _HistorySection ## REMOVE ME!!
 
@@ -2238,10 +2271,7 @@ class __SetMembershipSection( LocationSection ) :
 
 		def name( self ) :
 
-			if self.__setName.startswith( "__" ) :
-				return IECore.CamelCase.toSpaced( self.__setName[2:] )
-			else :
-				return self.__setName or ""
+			return self.__setName or ""
 
 		def supportsInheritance( self ) :
 
@@ -2337,7 +2367,7 @@ class _OutputRow( Row ) :
 
 				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal ) :
 					collapseButton = GafferUI.Button( image = "collapsibleArrowRight.png", hasFrame=False )
-					collapseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__collapseButtonClicked ), scoped = False )
+					collapseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__collapseButtonClicked ) )
 					self.__label = TextDiff()
 					GafferUI.Spacer( imath.V2i( 1 ), parenting = { "expand" : True } )
 
@@ -2444,12 +2474,12 @@ class _SetDiff( Diff ) :
 
 					frame._qtWidget().setProperty( "gafferDiff", diffName )
 
-					frame.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
-					frame.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ), scoped = False )
-					frame.enterSignal().connect( lambda widget : widget.setHighlighted( True ), scoped = False )
-					frame.leaveSignal().connect( lambda widget : widget.setHighlighted( False ), scoped = False )
-					frame.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
-					frame.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
+					frame.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
+					frame.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) )
+					frame.enterSignal().connect( lambda widget : widget.setHighlighted( True ) )
+					frame.leaveSignal().connect( lambda widget : widget.setHighlighted( False ) )
+					frame.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
+					frame.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
 
 					GafferUI.Label( "" )
 
@@ -2505,9 +2535,7 @@ class _SetDiff( Diff ) :
 			return False
 
 		editor = self.ancestor( SceneInspector )
-
-		context = editor.getContext()
-		GafferSceneUI.ContextAlgo.setSelectedPaths( context, widget.paths )
+		GafferSceneUI.ScriptNodeAlgo.setSelectedPaths( editor.scriptNode(), widget.paths )
 
 		return True
 
@@ -2546,10 +2574,7 @@ class _SetsSection( Section ) :
 
 		def name( self ) :
 
-			if self.__setName.startswith( "__" ) :
-				return IECore.CamelCase.toSpaced( self.__setName[2:] )
-			else :
-				return self.__setName or ""
+			return self.__setName or ""
 
 		def __call__( self, target ) :
 

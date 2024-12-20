@@ -100,6 +100,19 @@ inline bool channelExistsWrapper( const GafferImage::ImagePlug *image, const std
 	return GafferImage::ImageAlgo::channelExists( image, channelName );
 }
 
+boost::python::list sortedChannelNamesWrapper( object pythonChannelNames )
+{
+	vector<string> channelNames;
+	container_utils::extend_container( channelNames, pythonChannelNames );
+	channelNames = GafferImage::ImageAlgo::sortedChannelNames( channelNames );
+	boost::python::list result;
+	for( const auto &it : channelNames )
+	{
+		result.append( it );
+	}
+	return result;
+}
+
 void deleteWithGIL( object *o )
 {
 	IECorePython::ScopedGILLock gilLock;
@@ -161,23 +174,26 @@ void parallelGatherTiles2( const GafferImage::ImagePlug &image, object pythonCha
 	);
 }
 
-IECoreImage::ImagePrimitivePtr imageWrapper( const ImagePlug *plug )
+IECoreImage::ImagePrimitivePtr imageWrapper( const ImagePlug *plug, const char *viewName )
 {
 	IECorePython::ScopedGILRelease gilRelease;
-	return ImageAlgo::image( plug );
+	std::string viewNameStr( viewName ? viewName : "" );
+	return ImageAlgo::image( plug, viewName ? &viewNameStr : nullptr );
 }
 
-IECore::MurmurHash imageHashWrapper( const ImagePlug *plug )
+IECore::MurmurHash imageHashWrapper( const ImagePlug *plug, const char *viewName )
 {
 	IECorePython::ScopedGILRelease gilRelease;
-	return ImageAlgo::imageHash( plug );
+	std::string viewNameStr( viewName ? viewName : "" );
+	return ImageAlgo::imageHash( plug, viewName ? &viewNameStr : nullptr );
 }
 
-IECore::CompoundDataPtr tilesWrapper( const ImagePlug *plug, bool copy )
+IECore::CompoundObjectPtr tilesWrapper( const ImagePlug *plug, bool copy, const char *viewName )
 {
 	IECorePython::ScopedGILRelease gilRelease;
-	IECore::ConstCompoundDataPtr d = ImageAlgo::tiles( plug );
-	return copy ? d->copy() : boost::const_pointer_cast<IECore::CompoundData>( d );
+	std::string viewNameStr( viewName ? viewName : "" );
+	IECore::ConstCompoundObjectPtr d = ImageAlgo::tiles( plug, viewName ? &viewNameStr : nullptr );
+	return copy ? d->copy() : boost::const_pointer_cast<IECore::CompoundObject>( d );
 }
 
 
@@ -196,6 +212,7 @@ void GafferImageModule::bindImageAlgo()
 	def( "colorIndex", &GafferImage::ImageAlgo::colorIndex );
 	def( "channelExists", &channelExistsWrapper );
 	def( "channelExists", ( bool (*)( const std::vector<std::string> &channelNames, const std::string &channelName ) )&GafferImage::ImageAlgo::channelExists );
+	def( "sortedChannelNames", &sortedChannelNamesWrapper );
 
 	enum_<ImageAlgo::TileOrder>( "TileOrder" )
 		.value( "Unordered", ImageAlgo::Unordered )
@@ -226,9 +243,9 @@ void GafferImageModule::bindImageAlgo()
 		)
 	);
 
-	def( "image", &imageWrapper );
-	def( "imageHash", &imageHashWrapper );
-	def( "tiles", &tilesWrapper, ( boost::python::arg( "_copy" ) = true ) );
+	def( "image", &imageWrapper, ( boost::python::arg( "viewName" ) = object() ) );
+	def( "imageHash", &imageHashWrapper, ( boost::python::arg( "viewName" ) = object() ) );
+	def( "tiles", &tilesWrapper, ( boost::python::arg( "_copy" ) = true, boost::python::arg( "viewName" ) = object() ) );
 
 	StringVectorFromStringVectorData();
 

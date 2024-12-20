@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_ADDDEPTH_H
-#define GAFFERIMAGE_ADDDEPTH_H
+#pragma once
 
 #include "Gaffer/CompoundNumericPlug.h"
 #include "Gaffer/StringPlug.h"
@@ -63,10 +62,10 @@ class GAFFERIMAGE_API FlatToDeep : public ImageProcessor
 			Channel,
 		};
 
-		FlatToDeep( const std::string &name=defaultName<FlatToDeep>() );
+		explicit FlatToDeep( const std::string &name=defaultName<FlatToDeep>() );
 		~FlatToDeep() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::FlatToDeep, FlatToDeepTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::FlatToDeep, FlatToDeepTypeId, ImageProcessor );
 
 		Gaffer::IntPlug *zModePlug();
 		const Gaffer::IntPlug *zModePlug() const;
@@ -107,5 +106,3 @@ class GAFFERIMAGE_API FlatToDeep : public ImageProcessor
 IE_CORE_DECLAREPTR( FlatToDeep )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_ADDDEPTH_H

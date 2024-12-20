@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_MESHDISTORTION_H
-#define GAFFERSCENE_MESHDISTORTION_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -50,10 +49,10 @@ class GAFFERSCENE_API MeshDistortion : public ObjectProcessor
 
 	public :
 
-		MeshDistortion( const std::string &name=defaultName<MeshDistortion>() );
+		explicit MeshDistortion( const std::string &name=defaultName<MeshDistortion>() );
 		~MeshDistortion() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MeshDistortion, MeshDistortionTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::MeshDistortion, MeshDistortionTypeId, ObjectProcessor );
 
 		Gaffer::StringPlug *positionPlug();
 		const Gaffer::StringPlug *positionPlug() const;
@@ -85,5 +84,3 @@ class GAFFERSCENE_API MeshDistortion : public ObjectProcessor
 IE_CORE_DECLAREPTR( MeshDistortion )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_MESHDISTORTION_H

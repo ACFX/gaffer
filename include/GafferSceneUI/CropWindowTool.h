@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENEUI_CROPWINDOWTOOL_H
-#define GAFFERSCENEUI_CROPWINDOWTOOL_H
+#pragma once
 
 #include "GafferImageUI/ImageView.h"
 
@@ -48,8 +47,6 @@
 #include "GafferUI/DragDropEvent.h"
 #include "GafferUI/Tool.h"
 
-#include "Gaffer/CompoundDataPlug.h"
-
 namespace GafferSceneUI
 {
 
@@ -60,16 +57,18 @@ class GAFFERSCENEUI_API CropWindowTool : public GafferUI::Tool
 
 	public :
 
-		CropWindowTool( GafferUI::View *view, const std::string &name = defaultName<CropWindowTool>() );
+		explicit CropWindowTool( GafferUI::View *view, const std::string &name = defaultName<CropWindowTool>() );
 
 		~CropWindowTool() override;
 
 		std::string status() const;
+		Gaffer::Box2fPlug *plug();
+		Gaffer::BoolPlug *enabledPlug();
 
-		using StatusChangedSignal = boost::signal<void (CropWindowTool &)>;
+		using StatusChangedSignal = Gaffer::Signals::Signal<void (CropWindowTool &)>;
 		StatusChangedSignal &statusChangedSignal();
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::CropWindowTool, CropWindowToolTypeId, GafferUI::Tool );
+		GAFFER_NODE_DECLARE_TYPE( GafferSceneUI::CropWindowTool, CropWindowToolTypeId, GafferUI::Tool );
 
 	private :
 
@@ -105,7 +104,9 @@ class GAFFERSCENEUI_API CropWindowTool : public GafferUI::Tool
 
 		Imath::Box2f resolutionGate() const;
 
-		boost::signals::scoped_connection m_overlayRectangleChangedConnection;
+		bool keyPress( const GafferUI::KeyEvent &event );
+
+		Gaffer::Signals::ScopedConnection m_overlayRectangleChangedConnection;
 
 		std::string m_overlayMessage;
 		std::string m_errorMessage;
@@ -115,7 +116,7 @@ class GAFFERSCENEUI_API CropWindowTool : public GafferUI::Tool
 		bool m_needCropWindowPlugSearch;
 		Gaffer::Box2fPlugPtr m_cropWindowPlug;
 		Gaffer::BoolPlugPtr m_cropWindowEnabledPlug; // may be null, even when m_cropWindowPlug is not
-		boost::signals::scoped_connection m_cropWindowPlugDirtiedConnection;
+		Gaffer::Signals::ScopedConnection m_cropWindowPlugDirtiedConnection;
 
 		bool m_overlayDirty;
 		RectanglePtr m_overlay;
@@ -129,5 +130,3 @@ class GAFFERSCENEUI_API CropWindowTool : public GafferUI::Tool
 IE_CORE_DECLAREPTR( CropWindowTool )
 
 } // namespace GafferSceneUI
-
-#endif // GAFFERSCENEUI_CROPWINDOWTOOL_H

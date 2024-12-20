@@ -43,6 +43,7 @@ import IECore
 import Gaffer
 import GafferImage
 import GafferDispatch
+import GafferTractor
 
 ##########################################################################
 # Note this file is shared with the `dispatch` app. We need to ensure any
@@ -66,7 +67,7 @@ def __scriptAdded( container, script ) :
 
 	GafferImage.FormatPlug.acquireDefaultFormatPlug( script )
 
-application.root()["scripts"].childAddedSignal().connect( __scriptAdded, scoped = False )
+application.root()["scripts"].childAddedSignal().connect( __scriptAdded )
 
 ##########################################################################
 # Bookmarks
@@ -107,12 +108,7 @@ if 'GafferUI' in sys.modules :
 # Dispatchers
 ##########################################################################
 
-dispatchers = [ GafferDispatch.LocalDispatcher ]
-with IECore.IgnoredExceptions( ImportError ) :
-	import GafferTractor
-	dispatchers.append( GafferTractor.TractorDispatcher )
-
-for dispatcher in dispatchers :
+for dispatcher in [ GafferDispatch.LocalDispatcher, GafferTractor.TractorDispatcher ] :
 
 	Gaffer.Metadata.registerValue( dispatcher, "jobName", "userDefault", "${script:name}" )
 	directoryName = dispatcher.staticTypeName().rpartition( ":" )[2].replace( "Dispatcher", "" ).lower()
@@ -124,9 +120,4 @@ for dispatcher in dispatchers :
 
 with IECore.IgnoredExceptions( ImportError ) :
 	import GafferArnold
-	Gaffer.Metadata.registerValue( GafferArnold.ArnoldRender, "fileName", "userDefault", "${project:rootDirectory}/asses/${script:name}/${script:name}.####.ass" )
 	Gaffer.Metadata.registerValue( GafferArnold.ArnoldTextureBake, "bakeDirectory", "userDefault", "${project:rootDirectory}/bakedTextures/${script:name}/" )
-
-with IECore.IgnoredExceptions( ImportError ) :
-	import GafferAppleseed
-	Gaffer.Metadata.registerValue( GafferAppleseed.AppleseedRender, "fileName", "userDefault", "${project:rootDirectory}/appleseeds/${script:name}/${script:name}.####.appleseed" )

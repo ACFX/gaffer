@@ -48,8 +48,8 @@ import math
 
 class FilterAlgoTest( GafferImageTest.ImageTestCase ) :
 
-	derivativesReferenceParallelFileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/filterDerivativesTest.parallel.exr" )
-	derivativesReferenceBoxFileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/filterDerivativesTest.box.exr" )
+	derivativesReferenceParallelFileName = GafferImageTest.ImageTestCase.imagesPath() / "filterDerivativesTest.parallel.exr"
+	derivativesReferenceBoxFileName = GafferImageTest.ImageTestCase.imagesPath() / "filterDerivativesTest.box.exr"
 
 	# Artificial test of several filters passing in different derivatives, including a bunch of 15 degree rotations
 	def testFilterDerivatives( self ):
@@ -71,7 +71,19 @@ class FilterAlgoTest( GafferImageTest.ImageTestCase ) :
 
 		s = GafferImage.Sampler( redDotCentered["out"], "R", sampleRegion, GafferImage.Sampler.BoundingMode.Black )
 
-		filters = GafferImage.FilterAlgo.filterNames()
+		filters = [
+			'box', 'triangle', 'gaussian', 'sharp-gaussian', 'catmull-rom', 'blackman-harris',
+			'sinc', 'lanczos3', 'radial-lanczos3', 'mitchell', 'bspline', 'disk', 'cubic',
+			'keys', 'simon', 'rifman', 'smoothGaussian',
+		]
+		if filters != GafferImage.FilterAlgo.filterNames() :
+			print(
+				"INFO : GafferImageTest.FilterAlgoTest.testFilterDerivatives : " +
+				"Some image filters have not been tested ({}). Consider updating the reference images to account for the newly available filters.".format(
+					list(set(filters).symmetric_difference(set(GafferImage.FilterAlgo.filterNames())))
+				)
+			)
+
 		dirs = [
 			(imath.V2f(1,0), imath.V2f(0,1)),
 			(imath.V2f(5,0), imath.V2f(0,1)),
@@ -112,8 +124,8 @@ class FilterAlgoTest( GafferImageTest.ImageTestCase ) :
 			IECore.Writer.create( parallelogramImage, "/tmp/filterDerivativesTestResult.parallelogram.exr" ).write()
 			IECore.Writer.create( boxImage, "/tmp/filterDerivativesTestResult.box.exr" ).write()
 
-		parallelogramReference = IECore.Reader.create( self.derivativesReferenceParallelFileName ).read()
-		boxReference = IECore.Reader.create( self.derivativesReferenceBoxFileName ).read()
+		parallelogramReference = IECore.Reader.create( str( self.derivativesReferenceParallelFileName ) ).read()
+		boxReference = IECore.Reader.create( str( self.derivativesReferenceBoxFileName ) ).read()
 
 		for i in range( len( parallelogramImage["R"] ) ):
 			self.assertAlmostEqual( parallelogramReference["R"][i], parallelogramImage["R"][i], places = 5 )
@@ -122,7 +134,7 @@ class FilterAlgoTest( GafferImageTest.ImageTestCase ) :
 	def testMatchesResample( self ):
 		def __test( fileName, size, filter ) :
 
-			inputFileName = os.path.dirname( __file__ ) + "/images/" + fileName
+			inputFileName = self.imagesPath() / fileName
 
 			reader = GafferImage.ImageReader()
 			reader["fileName"].setValue( inputFileName )

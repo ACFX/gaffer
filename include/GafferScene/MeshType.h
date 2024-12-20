@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_MESHTYPE_H
-#define GAFFERSCENE_MESHTYPE_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -55,10 +54,10 @@ class GAFFERSCENE_API MeshType : public ObjectProcessor
 
 	public :
 
-		MeshType( const std::string &name=defaultName<MeshType>() );
+		explicit MeshType( const std::string &name=defaultName<MeshType>() );
 		~MeshType() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MeshType, MeshTypeTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::MeshType, MeshTypeTypeId, ObjectProcessor );
 
 		Gaffer::StringPlug *meshTypePlug();
 		const Gaffer::StringPlug *meshTypePlug() const;
@@ -68,6 +67,15 @@ class GAFFERSCENE_API MeshType : public ObjectProcessor
 
 		Gaffer::BoolPlug *overwriteExistingNormalsPlug();
 		const Gaffer::BoolPlug *overwriteExistingNormalsPlug() const;
+
+		Gaffer::StringPlug *interpolateBoundaryPlug();
+		const Gaffer::StringPlug *interpolateBoundaryPlug() const;
+
+		Gaffer::StringPlug *faceVaryingLinearInterpolationPlug();
+		const Gaffer::StringPlug *faceVaryingLinearInterpolationPlug() const;
+
+		Gaffer::StringPlug *triangleSubdivisionRulePlug();
+		const Gaffer::StringPlug *triangleSubdivisionRulePlug() const;
 
 	protected :
 
@@ -84,5 +92,3 @@ class GAFFERSCENE_API MeshType : public ObjectProcessor
 IE_CORE_DECLAREPTR( MeshType )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_MESHTYPE_H

@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_SHUFFLEATTRIBUTES_H
-#define GAFFERSCENE_SHUFFLEATTRIBUTES_H
+#pragma once
 
 #include "GafferScene/AttributeProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERSCENE_API ShuffleAttributes : public AttributeProcessor
 
 	public :
 
-		ShuffleAttributes( const std::string &name=defaultName<ShuffleAttributes>() );
+		explicit ShuffleAttributes( const std::string &name=defaultName<ShuffleAttributes>() );
 		~ShuffleAttributes() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::ShuffleAttributes, ShuffleAttributesTypeId, AttributeProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::ShuffleAttributes, ShuffleAttributesTypeId, AttributeProcessor );
 
 		Gaffer::ShufflesPlug *shufflesPlug();
 		const Gaffer::ShufflesPlug *shufflesPlug() const;
@@ -72,5 +71,3 @@ class GAFFERSCENE_API ShuffleAttributes : public AttributeProcessor
 IE_CORE_DECLAREPTR( ShuffleAttributes )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_SHUFFLEATTRIBUTES_H

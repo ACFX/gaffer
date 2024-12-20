@@ -6,7 +6,7 @@ After you have installed Gaffer, it will remain a collection of files and direct
 > For these instructions, we will assume you have Gaffer installed to the `/opt/` directory. If you have installed it elsewhere, replace `/opt/` with the directory you installed it to.
 
 
-### Environment variables ###
+## Environment variables ##
 
 An environment variable is simply a value, such as a string, number, boolean, or location that your terminal is aware of. For instance, when you ran the `tar` command to extract the downloaded Gaffer package, the `tar` command was not located in your `~/Downloads` directory, but actually in `/usr/bin/`. Whenever you open your terminal, several folders are added to your terminal's `PATH` environment variable, which provides it with a list of locations in the file system from which it can source commands.
 
@@ -17,18 +17,18 @@ In order for the `gaffer` command to work in your terminal, you will need to add
 
 The particular terminal on your system depends on your Linux distribution and how it was configured. Most distributions of Linux use bash, but there are other common terminals available, like tcsh. Because we cannot accommodate every available terminal, we will only provide instructions for adding to the `PATH` variable in bash and tcsh.
 
-> Tip : 
+> Tip :
 > If you are not sure which terminal you have, you can find its name by opening a terminal and inputting `echo $0`, which will return `/bin/bash`, `tcsh`, or some equivalent. If you are not using bash or tcsh, the same principles of environment variables will apply, and your terminal's documentation should provide a comparable way of modifying the `PATH` variable.
 
 To set up the `gaffer` command in Linux:
 
 1. Open your terminal's config file in a text editor.
-    
+
     - bash config: `~/.bash_profile`
     - tcsh config: `~/.tcsh_profile`
 
 2. Add the following line to the end of the file:
-    
+
     - bash: `export PATH=$PATH\:/opt/gaffer-!GAFFER_VERSION!-linux/bin`
     - tcsh: `setenv PATH $PATH\:/opt/gaffer-!GAFFER_VERSION!-linux/bin`
 
@@ -47,6 +47,37 @@ To set up the `gaffer` command in Linux:
 > Depending on your system configuration, the beginning of your `PATH` variable might not appear exactly as above. What's important is whether `/opt/gaffer-!GAFFER_VERSION!-linux/bin` appears at the end of the path.
 
 You can now execute `gaffer` as a command from any directory in the terminal.
+
+
+## Setting up the "gaffer" command in Windows ##
+
+To set up the `gaffer` command in Windows:
+
+1. Right click on the Start menu and click on __System__.
+
+2. In the "Settings" window, click on __Advanced System Settings__.
+
+3. In the "System Properties" window, click on __Environment Variables__.
+
+4. The "Environment Variables" window contains two sections, one for the current user's environment variables and the other for system environment variables, which apply to all users. In the appropriate section, select the `Path` entry and click __Edit...__
+
+5. In the "Edit environment variable" window, click __New__ and specify the path to the Gaffer install's `bin` directory.
+
+    - `C:\software\gaffer-!GAFFER_VERSION!-windows\bin`
+
+6. Click __Ok__ to apply the edit, and __Ok__ again to dismiss the "Edit environment variable" window.
+
+7. In a new Command Prompt window, test that the `PATH` variable has been updated:
+
+    ```powershell
+    C:\Users\user> echo %PATH%
+    # C:\Windows\system32;C:\software\gaffer-!GAFFER_VERSION!-windows\bin
+    ```
+
+> Note :
+> Depending on your system configuration, the beginning of your `PATH` variable might not appear exactly as above. What's important is whether `C:\software\gaffer-!GAFFER_VERSION!-windows\bin` appears.
+
+You can now execute `gaffer` as a command from any directory in the command prompt.
 
 
 ## Setting up the "gaffer" command in macOS ##

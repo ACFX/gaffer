@@ -55,7 +55,7 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 		GafferUI.PlugValueWidget.__init__( self, self.__row, plugs, **kw )
 
 		self.__ensureChildPlugValueWidgets()
-		self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
+		self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
 
 	def setPlugs( self, plugs ) :
 
@@ -73,17 +73,6 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 				# End widgets managed by a subclass.
 				break
 
-	def setReadOnly( self, readOnly ) :
-
-		if readOnly == self.getReadOnly() :
-			return
-
-		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
-
-		for w in self.__row :
-			if isinstance( w, GafferUI.PlugValueWidget ) :
-				w.setReadOnly( readOnly )
-
 	def childPlugValueWidget( self, childPlug ) :
 
 		for widget in self.__row :
@@ -92,10 +81,6 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 					return widget
 
 		return None
-
-	def _updateFromPlugs( self ) :
-
-		pass
 
 	## Returns the ListContainer used as the main layout for this Widget.
 	# Derived classes may use it to add to the layout.
@@ -116,7 +101,7 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 		if isinstance( value, IECore.Data ) and hasattr( value, "value" ) :
 			value = value.value
 			if hasattr( value, "dimensions" ) and isinstance( value.dimensions(), int ) :
-				with self.getContext() :
+				with self.context() :
 					result = sole( p.getValue() for p in self.getPlugs() )
 				if result is None :
 					return None
@@ -131,7 +116,7 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		if event.key == "G" and event.modifiers & event.Modifiers.Control :
 
-			if not all( hasattr( p, "isGanged" ) for p in self.getPlugs() ) :
+			if not all( hasattr( p, "isGanged" ) and p.direction() == p.Direction.In for p in self.getPlugs() ) :
 				return False
 
 			if all( p.isGanged() for p in self.getPlugs() ) :
@@ -145,13 +130,13 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __gang( self ) :
 
-		with Gaffer.UndoScope( next( iter( self.getPlugs() ) ).ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.scriptNode() ) :
 			for plug in self.getPlugs() :
 				plug.gang()
 
 	def __ungang( self ) :
 
-		with Gaffer.UndoScope( next( iter( self.getPlugs() ) ).ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.scriptNode() ) :
 			for plug in self.getPlugs() :
 				plug.ungang()
 
@@ -170,10 +155,10 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 			return
 
 		plugs = compoundNumericPlugValueWidget.getPlugs()
-		if not all( hasattr( p, "isGanged" ) for p in plugs ) :
+		if not all( hasattr( p, "isGanged" ) and p.direction() == p.Direction.In for p in plugs ) :
 			return
 
-		readOnly = plugValueWidget.getReadOnly() or any( Gaffer.MetadataAlgo.readOnly( p ) for p in plugs )
+		readOnly = any( Gaffer.MetadataAlgo.readOnly( p ) for p in plugs )
 
 		if all( p.isGanged() for p in plugs ) :
 			menuDefinition.append( "/GangDivider", { "divider" : True } )
@@ -205,7 +190,7 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 				additionalWidgets = self.__row[i:]
 				break
 
-		dimensions = min( len( p ) for p in self.getPlugs() )
+		dimensions = min( len( p ) for p in self.getPlugs() ) if self.getPlugs() else 2
 		if dimensions > len( numericWidgets ) :
 			for i in range( 0, dimensions - len( numericWidgets ) ) :
 				numericWidgets.append( GafferUI.NumericPlugValueWidget( plugs = [] ) )
@@ -227,7 +212,7 @@ class CompoundNumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 			w.setPlugs( { p[i] for p in self.getPlugs() } )
 			w.setVisible( i < visibleDimensions )
 
-GafferUI.PlugValueWidget.popupMenuSignal().connect( CompoundNumericPlugValueWidget._popupMenu, scoped = False )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( CompoundNumericPlugValueWidget._popupMenu )
 
 GafferUI.PlugValueWidget.registerType( Gaffer.V2fPlug, CompoundNumericPlugValueWidget )
 GafferUI.PlugValueWidget.registerType( Gaffer.V3fPlug, CompoundNumericPlugValueWidget )

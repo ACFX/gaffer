@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_MESHTOPOINTS_H
-#define GAFFERSCENE_MESHTOPOINTS_H
+#pragma once
 
 #include "GafferScene/Deformer.h"
 
@@ -54,10 +53,10 @@ class GAFFERSCENE_API MeshToPoints : public Deformer
 
 	public :
 
-		MeshToPoints( const std::string &name=defaultName<MeshToPoints>() );
+		explicit MeshToPoints( const std::string &name=defaultName<MeshToPoints>() );
 		~MeshToPoints() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MeshToPoints, MeshToPointsTypeId, Deformer );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::MeshToPoints, MeshToPointsTypeId, Deformer );
 
 		Gaffer::StringPlug *typePlug();
 		const Gaffer::StringPlug *typePlug() const;
@@ -77,5 +76,3 @@ class GAFFERSCENE_API MeshToPoints : public Deformer
 IE_CORE_DECLAREPTR( MeshToPoints )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_MESHTOPOINTS_H

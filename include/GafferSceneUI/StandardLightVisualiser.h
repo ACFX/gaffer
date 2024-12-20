@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENEUI_STANDARDLIGHTVISUALISER_H
-#define GAFFERSCENEUI_STANDARDLIGHTVISUALISER_H
+#pragma once
 
 #include "GafferSceneUI/Export.h"
 #include "GafferScene/Private/IECoreGLPreview/LightVisualiser.h"
@@ -69,13 +68,13 @@ class GAFFERSCENEUI_API StandardLightVisualiser : public IECoreGLPreview::LightV
 
 	protected :
 
-		static IECoreGL::ConstRenderablePtr ray();
-		static IECoreGL::ConstRenderablePtr pointRays( float radius = 0 );
-		static IECoreGL::ConstRenderablePtr distantRays();
-		static IECoreGL::ConstRenderablePtr spotlightCone( float innerAngle, float outerAngle, float lensRadius, float length = 1.0f, float lineWidthScale = 1.0f );
-		static IECoreGL::ConstRenderablePtr sphereWireframe( float radius, const Imath::Vec3<bool> &axisRings, float lineWidthScale = 1.0f, const Imath::V3f &center = Imath::V3f( 0.0f ) );
+		static IECoreGL::ConstRenderablePtr ray( bool muted = false );
+		static IECoreGL::ConstRenderablePtr pointRays( float radius = 0, bool muted = false );
+		static IECoreGL::ConstRenderablePtr distantRays( bool muted = false );
+		static IECoreGL::ConstRenderablePtr spotlightCone( float innerAngle, float outerAngle, float lensRadius, float length = 1.0f, float lineWidthScale = 1.0f, bool muted = false );
+		static IECoreGL::ConstRenderablePtr sphereWireframe( float radius, const Imath::Vec3<bool> &axisRings, float lineWidthScale = 1.0f, const Imath::V3f &center = Imath::V3f( 0.0f ), bool muted = false );
 
-		static IECoreGL::ConstRenderablePtr quadPortal( const Imath::V2f &size, float hatchingScale = 1.0f );
+		static IECoreGL::ConstRenderablePtr quadPortal( const Imath::V2f &size, float hatchingScale = 1.0f, bool muted = false );
 
 		static IECoreGL::ConstRenderablePtr colorIndicator( const Imath::Color3f &color );
 
@@ -91,25 +90,27 @@ class GAFFERSCENEUI_API StandardLightVisualiser : public IECoreGLPreview::LightV
 		// The default implementation looks for a string parameter registered
 		// as the "textureNameParameter" for the supplied shader network's
 		// output shader.
-		virtual IECore::DataPtr surfaceTexture( const IECoreScene::ShaderNetwork *shaderNetwork, const IECore::CompoundObject *attributes, int maxTextureResolution ) const;
+		virtual IECore::DataPtr surfaceTexture( const IECore::InternedString &attributeName, const IECoreScene::ShaderNetwork *shaderNetwork, const IECore::CompoundObject *attributes, int maxTextureResolution ) const;
 
 	private :
 
 		/// \todo Expose publicly once we have enough uses to dictate
 		/// the most general set of parameters.
-		static IECoreGL::ConstRenderablePtr cylinderShape( float radius, bool filled = false, const Imath::Color3f &color = Imath::Color3f( 1.0f ) );
-		static IECoreGL::ConstRenderablePtr pointShape( float radius );
-		static IECoreGL::ConstRenderablePtr cylinderRays( float radius );
+		static IECoreGL::ConstRenderablePtr pointShape( float radius, bool muted = false );
 
 		// textureData should be as per return type of surfaceTexture
 
 		static IECoreGL::ConstRenderablePtr environmentSphereSurface( IECore::ConstDataPtr textureData, const Imath::Color3f &tint, int textureMaxResolution, const Imath::Color3f &fallbackColor );
 
-		static IECoreGL::ConstRenderablePtr quadWireframe( const Imath::V2f &size );
-		static IECoreGL::ConstRenderablePtr quadSurface( const Imath::V2f &size, IECore::ConstDataPtr textureData, const Imath::Color3f &tint, int textureMaxResolution, const Imath::Color3f &fallbackColor );
+		static IECoreGL::ConstRenderablePtr quadWireframe( const Imath::V2f &size, bool muted = false );
+		static IECoreGL::ConstRenderablePtr quadSurface( const Imath::V2f &size, IECore::ConstDataPtr textureData, const Imath::Color3f &tint, int textureMaxResolution, const Imath::Color3f &fallbackColor, const Imath::M33f &uvOrientation );
 
-		static IECoreGL::ConstRenderablePtr diskWireframe( float radius );
+		static IECoreGL::ConstRenderablePtr diskWireframe( float radius, bool muted = false );
 		static IECoreGL::ConstRenderablePtr diskSurface( float radius, IECore::ConstDataPtr textureData, const Imath::Color3f &tint, int textureMaxResolution, const Imath::Color3f &fallbackColor );
+
+		static IECoreGL::ConstRenderablePtr cylinderWireframe( float radius, float length, bool muted = false );
+		static IECoreGL::ConstRenderablePtr cylinderSurface( float radius, float length, const Imath::Color3f &color );
+		static IECoreGL::ConstRenderablePtr cylinderRays( float radius, bool muted = false );
 
 		static LightVisualiser::LightVisualiserDescription<StandardLightVisualiser> g_description;
 
@@ -118,5 +119,3 @@ class GAFFERSCENEUI_API StandardLightVisualiser : public IECoreGLPreview::LightV
 IE_CORE_DECLAREPTR( StandardLightVisualiser )
 
 } // namespace GafferSceneUI
-
-#endif // GAFFERSCENEUI_STANDARDLIGHTVISUALISER_H

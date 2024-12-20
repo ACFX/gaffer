@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_PATHFILTER_H
-#define GAFFERSCENE_PATHFILTER_H
+#pragma once
 
 #include "GafferScene/Filter.h"
 
@@ -50,9 +49,9 @@ class GAFFERSCENE_API PathFilter : public Filter
 
 	public :
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::PathFilter, PathFilterTypeId, Filter );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::PathFilter, PathFilterTypeId, Filter );
 
-		PathFilter( const std::string &name=defaultName<PathFilter>() );
+		explicit PathFilter( const std::string &name=defaultName<PathFilter>() );
 		~PathFilter() override;
 
 		Gaffer::StringVectorDataPlug *pathsPlug();
@@ -100,5 +99,3 @@ class GAFFERSCENE_API PathFilter : public Filter
 IE_CORE_DECLAREPTR( PathFilter )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_PATHFILTER_H

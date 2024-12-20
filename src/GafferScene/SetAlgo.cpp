@@ -44,12 +44,14 @@
 
 #include "boost/algorithm/string/predicate.hpp"
 #include "boost/fusion/include/adapt_struct.hpp"
+#include "boost/phoenix/operator.hpp"
 #include "boost/spirit/include/classic_core.hpp"
-#include "boost/spirit/include/phoenix_operator.hpp"
 #include "boost/spirit/include/qi.hpp"
 #include "boost/spirit/repository/include/qi_distinct.hpp"
 #include "boost/variant/apply_visitor.hpp"
 #include "boost/variant/recursive_variant.hpp"
+
+#include "fmt/format.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -66,17 +68,17 @@ struct Nil {};
 
 // Determine which Ops are supported in SetExpressions
 // and provide a way to print them for debugging.
-enum Op { And, Or, AndNot, In, Containing };
+enum Op { Intersection, Union, Difference, In, Containing };
 
 std::ostream & operator<<( std::ostream &out, const Op &op )
 {
 	switch( op )
 	{
-		case Or :
+		case Union :
 			out << "|"; break;
-		case And :
+		case Intersection :
 			out << "&"; break;
-		case AndNot :
+		case Difference :
 			out << "-"; break;
 		case In :
 			out << "in"; break;
@@ -86,26 +88,11 @@ std::ostream & operator<<( std::ostream &out, const Op &op )
 	return out;
 }
 
-struct ExpressionAst
-{
-	typedef
-	boost::variant<
-		Nil,
-		std::string, // identifier
-		boost::recursive_wrapper<ExpressionAst>,
-		boost::recursive_wrapper<BinaryOp>
-		>
-	type;
-
-	ExpressionAst()
-		: expr( Nil() ) {}
-
-	template <typename Expr>
-	ExpressionAst( const Expr &expr )
-		: expr( expr ) {}
-
-	type expr;
-};
+using ExpressionAst = boost::variant<
+	Nil,
+	std::string, // identifier
+	boost::recursive_wrapper<BinaryOp>
+>;
 
 struct BinaryOp
 {
@@ -124,11 +111,11 @@ struct BinaryOp
 struct CreateBinaryOpImplementation
 {
 
-	typedef ExpressionAst & result_type;
+	using result_type = ExpressionAst &;
 
 	ExpressionAst & operator()( ExpressionAst &lhs, Op op, ExpressionAst &rhs ) const
 	{
-		lhs.expr = BinaryOp( lhs.expr, op, rhs );
+		lhs = BinaryOp( lhs, op, rhs );
 		return lhs;
 	}
 
@@ -140,12 +127,12 @@ boost::phoenix::function<CreateBinaryOpImplementation> createBinaryOp;
 
 // Visiting the AST
 // ----------------
-// For a simple AST with only one operation (AND) on two sets (A and B)
-// the output will look like this: op:&(A, B)
+// For a simple AST with only one operation (Intersection) on two sets (A and B)
+// the output will look like this: op:&(A, B).
 // If one of the operands is an operation itself: op:&(A, op:|(B, C))
 struct AstPrinter
 {
-	typedef void result_type;
+	using result_type = void;
 
 	AstPrinter()
 		: stream( std::cout ) {}
@@ -158,11 +145,6 @@ struct AstPrinter
 		stream << n;
 	}
 
-	void operator()( const ExpressionAst &ast ) const
-	{
-		boost::apply_visitor( *this, ast.expr );
-	}
-
 	void operator()( const Nil &nil ) const
 	{
 	}
@@ -170,9 +152,9 @@ struct AstPrinter
 	void operator()( const BinaryOp &expr ) const
 	{
 		stream << "op:" << expr.op << "(";
-		boost::apply_visitor( *this, expr.left.expr );
+		boost::apply_visitor( *this, expr.left );
 		stream << ", ";
-		boost::apply_visitor( *this, expr.right.expr );
+		boost::apply_visitor( *this, expr.right );
 		stream << ')';
 	}
 
@@ -183,8 +165,7 @@ struct AstPrinter
 // support for printing ExpressionsAst's for debugging through BOOST_SPIRIT_DEBUG
 std::ostream& operator<<( std::ostream& stream, const ExpressionAst& expr )
 {
-	AstPrinter printer( stream );
-	printer( expr );
+	boost::apply_visitor( AstPrinter( stream ), expr );
 	return stream;
 }
 #endif
@@ -193,7 +174,7 @@ std::ostream& operator<<( std::ostream& stream, const ExpressionAst& expr )
 // ------------------
 struct AstEvaluator
 {
-	typedef PathMatcher result_type;
+	using result_type = PathMatcher;
 
 	AstEvaluator( const ScenePlug *scene )
 		: m_scene( scene )
@@ -208,7 +189,7 @@ struct AstEvaluator
 			PathMatcher result;
 			if( StringAlgo::hasWildcards( identifier ) )
 			{
-				throw IECore::Exception( boost::str( boost::format( "Object name \"%1%\" contains wildcards" ) % identifier ) );
+				throw IECore::Exception( fmt::format( "Object name \"{}\" contains wildcards", identifier ) );
 			}
 			result.addPath( identifier );
 			return result;
@@ -239,17 +220,12 @@ struct AstEvaluator
 					continue;
 				}
 
-				setScope.setSetName( setName );
+				setScope.setSetName( &setName );
 				ConstPathMatcherDataPtr setData = m_scene->setPlug()->getValue();
 				result.addPaths( setData->readable() );
 			}
 			return result;
 		}
-	}
-
-	result_type operator()( const ExpressionAst &ast ) const
-	{
-		return boost::apply_visitor( *this, ast.expr );
 	}
 
 	result_type operator()( const Nil &nil ) const
@@ -260,22 +236,22 @@ struct AstEvaluator
 
 	result_type operator()( const BinaryOp &expr ) const
 	{
-		PathMatcher left = boost::apply_visitor( *this, expr.left.expr );
-		PathMatcher right = boost::apply_visitor( *this, expr.right.expr );
+		PathMatcher left = boost::apply_visitor( *this, expr.left );
+		PathMatcher right = boost::apply_visitor( *this, expr.right );
 
 		switch( expr.op )
 		{
-			case Or :
+			case Union :
 			{
 				PathMatcher result = PathMatcher( left );
 				result.addPaths( right );
 				return result;
 			}
-			case And :
+			case Intersection :
 			{
 				return left.intersection( right );
 			}
-			case AndNot :
+			case Difference :
 			{
 				PathMatcher result = PathMatcher( left );
 				result.removePaths( right );
@@ -316,7 +292,7 @@ struct AstEvaluator
 // ---------------
 struct AstHasher
 {
-	typedef void result_type;
+	using result_type = void;
 
 	AstHasher( const ScenePlug *scene, IECore::MurmurHash &h ) : m_scene( scene ), m_hash( h )
 	{
@@ -358,22 +334,17 @@ struct AstHasher
 					continue;
 				}
 
-				setScope.setSetName( setName );
+				setScope.setSetName( &setName );
 				m_hash.append( m_scene->setPlug()->hash() );
 			}
 		}
 	}
 
-	void operator()( const ExpressionAst &ast )
-	{
-		boost::apply_visitor( *this, ast.expr );
-	}
-
 	void operator()( const BinaryOp &expr )
 	{
 		m_hash.append( expr.op );
-		boost::apply_visitor( *this, expr.left.expr );
-		boost::apply_visitor( *this, expr.right.expr );
+		boost::apply_visitor( *this, expr.left );
+		boost::apply_visitor( *this, expr.right );
 	}
 
 	void operator()( const Nil &nil )
@@ -398,14 +369,15 @@ struct ExpressionGrammar : qi::grammar<Iterator, ExpressionAst(), ascii::space_t
 
 		/* Grammar Specification
 
-			 expression ->   andExpr  ( '|' andExpr | andExpr  )
-			 andExpr    ->   andNotExpr '&' andNotExpr
-			 andNotExpr ->   element    '-' element
-			 element    ->   identifier | '(' expression ')'
+			expression    ->   intersection ( '|' intersection | intersection )
+			intersection  ->   difference '&' difference
+			difference    ->   element '-' element
+			element       ->   identifier | '(' expression ')'
 
-			 This gives us implicit operator precedence in this order: -, &, |
-			 It also supports space separated lists (implicit OR).
-			 Note that sets can not have a name that starts with '/'.
+			This gives us implicit operator precedence in this order: -, &, |
+			It also supports space separated lists (implicit union).
+			Note that sets can not have a name that starts with '/'.
+
 		 */
 
 		// grammar                                                     bindings
@@ -419,24 +391,24 @@ struct ExpressionGrammar : qi::grammar<Iterator, ExpressionAst(), ascii::space_t
 			    );
 
 		containingExpression =
-			orExpression                                               [_val  = _1]
-			>> *(     ( containingKeyword >> orExpression              [createBinaryOp( _val, Containing, _1 )] )
+			unionExpression                                            [_val  = _1]
+			>> *(     ( containingKeyword >> unionExpression           [createBinaryOp( _val, Containing, _1 )] )
 			    );
 
-		orExpression =
-			andExpression                                              [_val  = _1]
-			>> *(     ( '|' >> andExpression                           [createBinaryOp( _val, Or, _1 )] )
-			    |     ( andExpression                                  [createBinaryOp( _val, Or, _1 )] )
+		unionExpression =
+			intersectionExpression                                     [_val  = _1]
+			>> *(     ( '|' >> intersectionExpression                  [createBinaryOp( _val, Union, _1 )] )
+			    |     ( intersectionExpression                         [createBinaryOp( _val, Union, _1 )] )
 			    );
 
-		andExpression =
-			andNotExpression                                           [_val  = _1]
-			>> *(     ( '&' >> andNotExpression                        [createBinaryOp( _val, And, _1 )] )
+		intersectionExpression =
+			differenceExpression                                       [_val  = _1]
+			>> *(     ( '&' >> differenceExpression                    [createBinaryOp( _val, Intersection, _1 )] )
 			    );
 
-		andNotExpression =
+		differenceExpression =
 			element                                                    [_val  = _1]
-			>> *(     ( '-' >> element                                 [createBinaryOp( _val, AndNot, _1 )] )
+			>> *(     ( '-' >> element                                 [createBinaryOp( _val, Difference, _1 )] )
 			    );
 
 		element =
@@ -454,26 +426,26 @@ struct ExpressionGrammar : qi::grammar<Iterator, ExpressionAst(), ascii::space_t
 		BOOST_SPIRIT_DEBUG_NODE(expression);
 		BOOST_SPIRIT_DEBUG_NODE(inExpression);
 		BOOST_SPIRIT_DEBUG_NODE(containingExpression);
-		BOOST_SPIRIT_DEBUG_NODE(andNotExpression);
-		BOOST_SPIRIT_DEBUG_NODE(andExpression);
-		BOOST_SPIRIT_DEBUG_NODE(orExpression);
+		BOOST_SPIRIT_DEBUG_NODE(differenceExpression);
+		BOOST_SPIRIT_DEBUG_NODE(intersectionExpression);
+		BOOST_SPIRIT_DEBUG_NODE(unionExpression);
 		BOOST_SPIRIT_DEBUG_NODE(identifier);
 	}
 
 	qi::rule<Iterator> inKeyword, containingKeyword, reservedWords;
 	qi::rule<Iterator, std::string()> identifier;
-	qi::rule<Iterator, ExpressionAst(), ascii::space_type> expression, inExpression, containingExpression, andNotExpression, andExpression, orExpression, element;
+	qi::rule<Iterator, ExpressionAst(), ascii::space_type> expression, inExpression, containingExpression, differenceExpression, intersectionExpression, unionExpression, element;
 };
 
 void expressionToAST( const std::string &setExpression, ExpressionAst &ast)
 {
-	if( setExpression == "" )
+	if( std::all_of( setExpression.begin(), setExpression.end(), isspace ) )
 	{
 		return;
 	}
 
-	typedef std::string::const_iterator iterator_type;
-	typedef ExpressionGrammar<iterator_type> ExpressionGrammar;
+	using iterator_type = std::string::const_iterator;
+	using ExpressionGrammar = ExpressionGrammar<iterator_type>;
 
 	ExpressionGrammar grammar;
 
@@ -488,8 +460,7 @@ void expressionToAST( const std::string &setExpression, ExpressionAst &ast)
 		std::cout << "-------------------------\n";
 		std::cout << "Parsing of '" << setExpression <<"' succeeded.\n";
 		std::cout << "Resulting AST:\n";
-		AstPrinter printer;
-		printer(ast);
+		std::cout << ast;
 		std::cout << "\n-------------------------\n";
 		#endif
 	}
@@ -507,7 +478,7 @@ void expressionToAST( const std::string &setExpression, ExpressionAst &ast)
 			errorIndication += '|' + std::string( indicationSize - 2, '-') + '|';
 		}
 
-		throw IECore::Exception( boost::str( boost::format( "Syntax error in indicated part of SetExpression.\n%s\n%i\n." ) % setExpression % errorIndication ) ) ;
+		throw IECore::Exception( fmt::format( "Syntax error in indicated part of SetExpression.\n{}\n{}\n.", setExpression, errorIndication ) );
 	}
 }
 
@@ -523,9 +494,7 @@ PathMatcher evaluateSetExpression( const std::string &setExpression, const Scene
 {
 	ExpressionAst ast;
 	expressionToAST( setExpression, ast );
-
-	AstEvaluator eval( scene );
-	return eval( ast );
+	return boost::apply_visitor( AstEvaluator( scene ), ast );
 }
 
 void setExpressionHash( const std::string &setExpression, const ScenePlug* scene, IECore::MurmurHash &h )
@@ -534,7 +503,7 @@ void setExpressionHash( const std::string &setExpression, const ScenePlug* scene
 	expressionToAST( setExpression, ast );
 
 	AstHasher hasher = AstHasher( scene, h );
-	hasher(ast);
+	boost::apply_visitor( hasher, ast );
 }
 
 IECore::MurmurHash setExpressionHash( const std::string &setExpression, const ScenePlug* scene)

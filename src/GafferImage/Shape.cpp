@@ -52,7 +52,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Shape );
+GAFFER_NODE_DEFINE_TYPE( Shape );
 
 size_t Shape::g_firstPlugIndex = 0;
 static std::string g_shapeChannelName( "__shape" );
@@ -199,6 +199,11 @@ void Shape::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs 
 		return;
 	}
 
+	if( input == inPlug()->deepPlug() )
+	{
+		outputs.push_back( shapePlug()->deepPlug() );
+	}
+
 	if( affectsShapeDataWindow( input ) )
 	{
 		outputs.push_back( shapePlug()->dataWindowPlug() );
@@ -220,6 +225,20 @@ void Shape::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs 
 		outputs.push_back( shadowShapePlug()->channelDataPlug() );
 	}
 
+}
+
+void Shape::hashViewNames( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	assert( parent == shapePlug() );
+	FlatImageProcessor::hashViewNames( parent, context, h );
+	// Because our view names are constant, we don't need to add
+	// anything else to the hash.
+}
+
+IECore::ConstStringVectorDataPtr Shape::computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	assert( parent == shapePlug() );
+	return ImagePlug::defaultViewNames();
 }
 
 void Shape::hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const

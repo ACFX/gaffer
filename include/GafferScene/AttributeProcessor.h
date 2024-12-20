@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_ATTRIBUTEPROCESSOR_H
-#define GAFFERSCENE_ATTRIBUTEPROCESSOR_H
+#pragma once
 
 #include "GafferScene/FilteredSceneProcessor.h"
 
@@ -50,7 +49,7 @@ class GAFFERSCENE_API AttributeProcessor : public FilteredSceneProcessor
 
 		~AttributeProcessor() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::AttributeProcessor, AttributeProcessorTypeId, FilteredSceneProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::AttributeProcessor, AttributeProcessorTypeId, FilteredSceneProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -58,11 +57,11 @@ class GAFFERSCENE_API AttributeProcessor : public FilteredSceneProcessor
 
 		/// Constructs with a single input ScenePlug named "in". Use inPlug()
 		/// to access this plug.
-		AttributeProcessor( const std::string &name );
+		explicit AttributeProcessor( const std::string &name );
 		/// Constructs with an ArrayPlug called "in". Use inPlug() as a
 		/// convenience for accessing the first child in the array, and use
 		/// inPlugs() to access the array itself.
-		AttributeProcessor( const std::string &name, size_t minInputs, size_t maxInputs = Imath::limits<size_t>::max() );
+		AttributeProcessor( const std::string &name, size_t minInputs, size_t maxInputs = std::numeric_limits<size_t>::max() );
 
 		/// Must be implemented by derived classes to return true if `input` is used
 		/// by `computeProcessedAttributes()`. Overrides must start by calling the base
@@ -100,5 +99,3 @@ class GAFFERSCENE_API AttributeProcessor : public FilteredSceneProcessor
 IE_CORE_DECLAREPTR( AttributeProcessor )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_ATTRIBUTEPROCESSOR_H

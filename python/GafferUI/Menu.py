@@ -36,11 +36,11 @@
 ##########################################################################
 
 import inspect
+import enum
 import functools
 import weakref
 import types
 import re
-import six
 
 import IECore
 
@@ -160,10 +160,7 @@ class Menu( GafferUI.Widget ) :
 	def __argNames( self, function ) :
 
 		if isinstance( function, types.FunctionType ) :
-			if six.PY3 :
-				return inspect.getfullargspec( function ).args
-			else :
-				return inspect.getargspec( function )[0]
+			return inspect.getfullargspec( function ).args
 		elif isinstance( function, types.MethodType ) :
 			return self.__argNames( function.__func__ )[1:]
 		elif isinstance( function, Gaffer.WeakMethod ) :
@@ -231,9 +228,7 @@ class Menu( GafferUI.Widget ) :
 			self.__searchLine.textEdited.connect( Gaffer.WeakMethod( self.__updateSearchMenu ) )
 			self.__searchLine.returnPressed.connect( Gaffer.WeakMethod( self.__searchReturnPressed ) )
 			self.__searchLine.setObjectName( "gafferSearchField" )
-			if hasattr( self.__searchLine, "setPlaceholderText" ) :
-				# setPlaceHolderText appeared in qt 4.7, nuke (6.3 at time of writing) is stuck on 4.6.
-				self.__searchLine.setPlaceholderText( "Search..." )
+			self.__searchLine.setPlaceholderText( "Search..." )
 			if self.__lastAction :
 				self.__searchLine.setText( self.__lastAction.text() )
 				self.__searchMenu.setDefaultAction( self.__lastAction )
@@ -316,6 +311,16 @@ class Menu( GafferUI.Widget ) :
 						subMenu = _Menu( qtMenu, name )
 						active = self.__evaluateItemValue( item.active )
 						subMenu.setEnabled( active )
+
+						icon = getattr( item, "icon", None )
+						if icon is not None :
+							if isinstance( icon, str ) :
+								image = GafferUI.Image( icon )
+							else :
+								assert( isinstance( icon, GafferUI.Image ) )
+								image = icon
+							subMenu.setIcon( QtGui.QIcon( image._qtPixmap() ) )
+
 						qtMenu.addMenu( subMenu )
 
 						subMenu.__definition = item.subMenu
@@ -371,7 +376,9 @@ class Menu( GafferUI.Widget ) :
 		if item.checkBox is not None :
 			qtAction.setCheckable( True )
 			checked = self.__evaluateItemValue( item.checkBox )
-			qtAction.setChecked( checked )
+			# if a callable was passed as the "checkBox" parameter it may return None
+			if checked is not None :
+				qtAction.setChecked( checked )
 
 		if item.command :
 
@@ -401,8 +408,11 @@ class Menu( GafferUI.Widget ) :
 
 		# when an icon file path is defined in the menu definition
 		icon = getattr( item, "icon", None )
-		if icon is not None :
-			if isinstance( icon, six.string_types ) :
+		# Qt is unable to display a checkbox and icon at the same time.
+		# Unhelpfully, the icon overrides the checkbox so we only display
+		# the icon when there is no checkbox.
+		if icon is not None and not qtAction.isChecked() :
+			if isinstance( icon, str ) :
 				image = GafferUI.Image( icon )
 			else :
 				assert( isinstance( icon, GafferUI.Image ) )
@@ -700,7 +710,7 @@ class _SpacerAction( QtWidgets.QWidgetAction ) :
 
 class _Menu( QtWidgets.QMenu ) :
 
-	KeyboardMode = IECore.Enum.create( "Grab", "Close", "Forward" )
+	KeyboardMode = enum.Enum( "KeyboardMode", [ "Grab", "Close", "Forward" ] )
 
 	def __init__( self, parent, title=None ) :
 
@@ -717,6 +727,9 @@ class _Menu( QtWidgets.QMenu ) :
 			action = self.actionAt( qEvent.pos() )
 			if action and action.statusTip() :
 				QtWidgets.QToolTip.showText( qEvent.globalPos(), action.statusTip(), self )
+				return True
+			elif QtWidgets.QToolTip.isVisible() :
+				QtWidgets.QToolTip.hideText()
 				return True
 
 		return QtWidgets.QMenu.event( self, qEvent )

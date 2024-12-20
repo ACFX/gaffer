@@ -450,17 +450,14 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		self.assertEqual( n.numComputeCalls, 1 )
 
 		h = n["sum"].hash()
-		numHashCalls = n.numHashCalls
-		# Accept either 1 or 2 - it would be reasonable for the ValuePlug
-		# to have either cached the hash or not, but that's not what we're
-		# testing here.
-		self.assertTrue( numHashCalls == 1 or numHashCalls == 2 )
+		self.assertEqual( n.numHashCalls, 1 )
 		self.assertEqual( n.numComputeCalls, 1 )
 
-		# What we care about is that calling getValue() with a precomputed hash
-		# definitely doesn't recompute the hash again.
+		# Calling `getValue()`` with a precomputed hash shouldn't recompute the
+		# hash again, even if it has been cleared from the cache.
+		Gaffer.ValuePlug.clearHashCache()
 		self.assertEqual( n["sum"].getValue( _precomputedHash = h ), 30 )
-		self.assertEqual( n.numHashCalls, numHashCalls )
+		self.assertEqual( n.numHashCalls, 1 )
 		self.assertEqual( n.numComputeCalls, 1 )
 
 	def testIsSetToDefault( self ) :
@@ -526,6 +523,11 @@ class NumericPlugTest( GafferTest.TestCase ) :
 			list( Gaffer.FloatPlug.RecursiveRange( n ) ),
 			[ n["c4"]["gc2"] ]
 		)
+
+	def testValueType( self ) :
+
+		self.assertIs( Gaffer.IntPlug.ValueType, int )
+		self.assertIs( Gaffer.FloatPlug.ValueType, float )
 
 if __name__ == "__main__":
 	unittest.main()

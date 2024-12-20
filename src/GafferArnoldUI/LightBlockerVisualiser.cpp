@@ -74,7 +74,7 @@ T parameter( InternedString metadataTarget, const IECore::CompoundData *paramete
 		return defaultValue;
 	}
 
-	typedef IECore::TypedData<T> DataType;
+	using DataType = IECore::TypedData<T>;
 	if( const DataType *parameterData = parameters->member<DataType>( parameterName->readable() ) )
 	{
 		return parameterData->readable();
@@ -183,7 +183,7 @@ class LightBlockerVisualiser : public LightFilterVisualiser
 		LightBlockerVisualiser();
 		~LightBlockerVisualiser() override;
 
-		virtual Visualisations visualise( const IECore::InternedString &attributeName, const IECoreScene::ShaderNetwork *filterShaderNetwork, const IECoreScene::ShaderNetwork *lightShaderNetwork, const IECore::CompoundObject *attributes, IECoreGL::ConstStatePtr &state ) const override;
+		Visualisations visualise( const IECore::InternedString &attributeName, const IECoreScene::ShaderNetwork *filterShaderNetwork, const IECoreScene::ShaderNetwork *lightShaderNetwork, const IECore::CompoundObject *attributes, IECoreGL::ConstStatePtr &state ) const override;
 
 	protected :
 

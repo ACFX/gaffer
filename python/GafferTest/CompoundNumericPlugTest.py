@@ -175,6 +175,21 @@ class CompoundNumericPlugTest( GafferTest.TestCase ) :
 
 		self.assertEqual( s["n"]["p"].getValue(), imath.V3f( 1, 2, 3 ) )
 
+	def testDynamicSerialisationNonDefaultInterpretation( self ):
+
+		s = Gaffer.ScriptNode()
+		n = Gaffer.Node()
+		n["p"] = Gaffer.V3fPlug( flags=Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic, interpretation = IECore.GeometricData.Interpretation.Vector )
+		n["p"].setValue( imath.V3f( 1, 2, 3 ) )
+		s["n"] = n
+
+		ss = s.serialise()
+
+		s = Gaffer.ScriptNode()
+		s.execute( ss )
+
+		self.assertEqual( s["n"]["p"].interpretation(), IECore.GeometricData.Interpretation.Vector )
+
 	def testDynamicSerialisationWithConnection( self ) :
 
 		s = Gaffer.ScriptNode()
@@ -230,6 +245,12 @@ class CompoundNumericPlugTest( GafferTest.TestCase ) :
 		self.assertTrue( p3[1].getInput().isSame( p4[1] ) )
 		self.assertTrue( p3[2].getInput().isSame( p4[2] ) )
 		self.assertEqual( p4[3].outputs(), () )
+
+	def testColor3fAcceptsV3fValue( self ) :
+
+		p = Gaffer.Color3fPlug()
+		p.setValue( imath.V3f( 1, 2, 3 ) )
+		self.assertEqual( p.getValue(), imath.Color3f( 1, 2, 3 ) )
 
 	def testColor4fDoesntAcceptColor3fInput( self ) :
 
@@ -467,6 +488,15 @@ class CompoundNumericPlugTest( GafferTest.TestCase ) :
 
 		n["p"].setValue( n["p"].defaultValue() )
 		self.assertTrue( n["p"].isSetToDefault() )
+
+	def testValueType( self ) :
+
+		self.assertIs( Gaffer.V2iPlug.ValueType, imath.V2i )
+		self.assertIs( Gaffer.V2fPlug.ValueType, imath.V2f )
+		self.assertIs( Gaffer.V3iPlug.ValueType, imath.V3i )
+		self.assertIs( Gaffer.V3fPlug.ValueType, imath.V3f )
+		self.assertIs( Gaffer.Color3fPlug.ValueType, imath.Color3f )
+		self.assertIs( Gaffer.Color4fPlug.ValueType, imath.Color4f )
 
 if __name__ == "__main__":
 	unittest.main()

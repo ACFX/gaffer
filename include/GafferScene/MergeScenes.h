@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_MERGESCENES_H
-#define GAFFERSCENE_MERGESCENES_H
+#pragma once
 
 #include "GafferScene/SceneProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERSCENE_API MergeScenes : public SceneProcessor
 
 	public :
 
-		MergeScenes( const std::string &name=defaultName<MergeScenes>() );
+		explicit MergeScenes( const std::string &name=defaultName<MergeScenes>() );
 		~MergeScenes() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MergeScenes, MergeScenesTypeId, SceneProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::MergeScenes, MergeScenesTypeId, SceneProcessor );
 
 		enum class Mode
 		{
@@ -157,5 +156,3 @@ class GAFFERSCENE_API MergeScenes : public SceneProcessor
 IE_CORE_DECLAREPTR( MergeScenes )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_MERGESCENES_H

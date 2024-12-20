@@ -35,15 +35,21 @@
 ##########################################################################
 
 import os
+import pathlib
 import sys
 import argparse
-import urllib
 import hashlib
+import subprocess
+import shutil
+
+if sys.version_info[0] < 3 :
+	from urllib import urlretrieve
+else :
+	from urllib.request import urlretrieve
 
 # Determine default archive URL.
 
-platform = "osx" if sys.platform == "darwin" else "linux"
-defaultURL = "https://github.com/GafferHQ/dependencies/releases/download/1.6.0/gafferDependencies-1.6.0-" + platform + ".tar.gz"
+defaultURL = "https://github.com/GafferHQ/dependencies/releases/download/9.1.0/gafferDependencies-9.1.0-{platform}{buildEnvironment}.{extension}"
 
 # Parse command line arguments.
 
@@ -53,6 +59,13 @@ parser.add_argument(
 	"--archiveURL",
 	help = "The URL to download the dependencies archive from.",
 	default = defaultURL,
+)
+
+parser.add_argument(
+	"--buildEnvironment",
+	help = "The build environment of the dependencies archive to download.",
+	choices = [ "gcc11" ],
+	default = os.environ.get( "GAFFER_BUILD_ENVIRONMENT", "gcc11" if sys.platform == "linux" else "" ),
 )
 
 parser.add_argument(
@@ -71,25 +84,48 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+archiveURL = args.archiveURL.format(
+	platform = { "darwin" : "osx", "win32" : "windows" }.get( sys.platform, "linux" ),
+	buildEnvironment = "-{}".format( args.buildEnvironment ) if args.buildEnvironment else "",
+	extension = "tar.gz" if sys.platform != "win32" else "zip"
+)
+
 # Download and unpack the archive.
 
-sys.stderr.write( "Downloading dependencies \"%s\"\n" % args.archiveURL )
-archiveFileName, headers = urllib.urlretrieve( args.archiveURL )
+sys.stderr.write( "Downloading dependencies \"{}\"\n".format( archiveURL ) )
+archiveFileName, headers = urlretrieve( archiveURL )
 
-os.makedirs( args.dependenciesDir )
-os.system( "tar xf %s -C %s --strip-components=1" % ( archiveFileName, args.dependenciesDir ) )
+pathlib.Path( args.dependenciesDir ).mkdir( parents = True )
+if sys.platform != "win32" :
+	subprocess.check_call( [ "tar", "xf", archiveFileName, "-C", args.dependenciesDir, "--strip-components=1" ] )
+else:
+	subprocess.check_call(
+		[ "7z", "x", archiveFileName, "-o{}".format( args.dependenciesDir ), "-aoa", "-y" ],
+		stdout = sys.stderr,
+	)
+	# 7z (and zip extractors generally) don't have an equivalent of --strip-components=1
+	# Copy the files up one directory level to compensate
+	extractedPath = pathlib.Path( args.dependenciesDir ) / pathlib.Path( archiveURL ).stem
+	for p in extractedPath.glob( "*" ) :
+		shutil.move( str( p ), args.dependenciesDir )
+
+	extractedPath.rmdir()
 
 # Tell the world
 
 if args.outputFormat :
 
 	md5 = hashlib.md5()
-	with open( archiveFileName ) as f :
+	with open( archiveFileName, mode="rb" ) as f :
 		md5.update( f.read() )
 
 	print(
 		args.outputFormat.format(
-			archiveURL = args.archiveURL,
+			archiveURL = archiveURL,
 			archiveDigest = md5.hexdigest()
 		)
 	)
+
+# Clean up
+
+pathlib.Path( archiveFileName ).unlink()

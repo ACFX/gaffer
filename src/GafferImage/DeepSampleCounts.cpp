@@ -44,7 +44,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeepSampleCounts );
+GAFFER_NODE_DEFINE_TYPE( DeepSampleCounts );
 
 size_t DeepSampleCounts::g_firstPlugIndex = 0;
 
@@ -53,6 +53,7 @@ DeepSampleCounts::DeepSampleCounts( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
@@ -117,7 +118,7 @@ IECore::ConstFloatVectorDataPtr DeepSampleCounts::computeChannelData( const std:
 		return ImagePlug::whiteTile();
 	}
 
-	scope.setTileOrigin( tileOrigin );
+	scope.setTileOrigin( &tileOrigin );
 	ConstIntVectorDataPtr sampleOffsetsData = inPlug()->sampleOffsetsPlug()->getValue();
 
 	FloatVectorDataPtr resultData = new FloatVectorData();

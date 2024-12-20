@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_PRIVATE_CHILDNAMESMAP_H
-#define GAFFERSCENE_PRIVATE_CHILDNAMESMAP_H
+#pragma once
 
 #include "IECore/Data.h"
 #include "IECore/PathMatcherData.h"
@@ -46,6 +45,7 @@
 #include "boost/multi_index_container.hpp"
 
 #include <vector>
+#include <unordered_set>
 
 namespace GafferScene
 {
@@ -76,6 +76,8 @@ class ChildNamesMap : public IECore::Data
 		/// Combines multiple input sets, accounting for the name remapping.
 		IECore::PathMatcher set( const std::vector<IECore::ConstPathMatcherDataPtr> &inputSets ) const;
 
+		static IECore::InternedString uniqueName( IECore::InternedString name, const std::unordered_set<IECore::InternedString> &existingNames );
+
 	private :
 
 		const IECore::InternedStringVectorDataPtr m_childNames;
@@ -103,5 +105,3 @@ IE_CORE_DECLAREPTR( ChildNamesMap )
 } // namespace Private
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_PRIVATE_CHILDNAMESMAP_H

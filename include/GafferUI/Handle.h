@@ -35,11 +35,13 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERUI_HANDLE_H
-#define GAFFERUI_HANDLE_H
+#pragma once
 
+#include "GafferUI/Export.h"
 #include "GafferUI/Gadget.h"
 #include "GafferUI/Style.h"
+
+#include <variant>
 
 namespace GafferUI
 {
@@ -65,12 +67,13 @@ class GAFFERUI_API Handle : public Gadget
 
 	protected :
 
-		Handle( const std::string &name=defaultName<Handle>() );
+		explicit Handle( const std::string &name=defaultName<Handle>() );
 
 		// Implemented to call renderHandle() after applying
 		// the raster scale.
-		void doRenderLayer( Layer layer, const Style *style ) const override;
-		bool hasLayer( Layer layer ) const override;
+		void renderLayer( Layer layer, const Style *style, RenderReason reason ) const override;
+		unsigned layerMask() const override;
+		Imath::Box3f renderBound() const override;
 
 		// Must be implemented by derived classes to draw their
 		// handle.
@@ -84,7 +87,7 @@ class GAFFERUI_API Handle : public Gadget
 		// Helper for performing linear drags. Should be constructed
 		// in `dragBegin()` and then `position()` should be used
 		// to measure the progress of the drag.
-		struct LinearDrag
+		struct GAFFERUI_API LinearDrag
 		{
 
 			LinearDrag( bool processModifiers = true );
@@ -116,7 +119,7 @@ class GAFFERUI_API Handle : public Gadget
 		};
 
 		// Helper for performing drags in a plane.
-		struct PlanarDrag
+		struct GAFFERUI_API PlanarDrag
 		{
 
 			PlanarDrag( bool processModifiers = true );
@@ -148,6 +151,7 @@ class GAFFERUI_API Handle : public Gadget
 				Imath::V3f m_worldOrigin;
 				Imath::V3f m_worldAxis0;
 				Imath::V3f m_worldAxis1;
+				Imath::V3f m_worldPlaneNormal;
 				Imath::V2f m_dragBeginPosition;
 
 				bool m_processModifiers;
@@ -157,6 +161,9 @@ class GAFFERUI_API Handle : public Gadget
 				bool m_preciseMotionEnabled;
 				Imath::V2f m_preciseMotionOrigin;
 
+				std::optional<LinearDrag> m_linearDrag;
+				Imath::V2f m_linearDragAxisMask;
+
 		};
 
 		// Returns the current scale factor needed to keep the handles
@@ -164,33 +171,37 @@ class GAFFERUI_API Handle : public Gadget
 		Imath::V3f rasterScaleFactor() const;
 
 		// Helper for performing drags around a rotation axis.
-		struct AngularDrag
+		struct GAFFERUI_API AngularDrag
 		{
 
 			AngularDrag( bool processModifiers = true );
-			// Origin and axes are in gadget space. Rotations will be around
-			// axis0, with 0 rotation along axis1. Axes are assumed to be
+			// Origin, normal and axis0 are in gadget space. Rotations will be around
+			// normal, with 0 rotation along axis0. Axes are assumed to be
 			// orthogonal, but may have any length.
-			AngularDrag( const Gadget *gadget, const Imath::V3f &origin, const Imath::V3f &axis0, const Imath::V3f axis1, const DragDropEvent &dragBeginEvent, bool processModifiers = true );
+			AngularDrag( const Gadget *gadget, const Imath::V3f &origin, const Imath::V3f &normal, const Imath::V3f &axis0, const DragDropEvent &dragBeginEvent, bool processModifiers = true );
 
 			// The axis of rotation in Gadget space.
-			const Imath::V3f &axis0() const;
+			const Imath::V3f &normal() const;
 			// The direction on which zero rotation lies.
-			const Imath::V3f &axis1() const;
+			const Imath::V3f &axis0() const;
 
 			// Rotation is in radians
 			float startRotation() const;
 			float updatedRotation( const DragDropEvent &event );
 
+			bool isLinearDrag() const;
+
 			private :
 
 				float closestRotation( const Imath::V2f &p, float targetRotation );
 
-				PlanarDrag m_drag;
+				const Gadget *m_gadget;
+
+				std::variant<std::monostate, PlanarDrag, LinearDrag> m_drag;
 				float m_rotation;
 
+				Imath::V3f m_normal;
 				Imath::V3f m_axis0;
-				Imath::V3f m_axis1;
 				float m_dragBeginRotation;
 
 				bool m_processModifiers;
@@ -218,9 +229,4 @@ class GAFFERUI_API Handle : public Gadget
 
 IE_CORE_DECLAREPTR( Handle )
 
-typedef Gaffer::FilteredChildIterator<Gaffer::TypePredicate<Handle> > HandleIterator;
-typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::TypePredicate<Handle> > RecursiveHandleIterator;
-
 } // namespace GafferUI
-
-#endif // GAFFERUI_HANDLE_H

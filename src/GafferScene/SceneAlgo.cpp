@@ -36,26 +36,32 @@
 
 #include "GafferScene/SceneAlgo.h"
 
+#include "GafferScene/AttributeTweaks.h"
 #include "GafferScene/CameraTweaks.h"
 #include "GafferScene/CopyAttributes.h"
+#include "GafferScene/CopyOptions.h"
 #include "GafferScene/Filter.h"
 #include "GafferScene/FilterProcessor.h"
 #include "GafferScene/LocaliseAttributes.h"
 #include "GafferScene/MergeScenes.h"
 #include "GafferScene/PathFilter.h"
 #include "GafferScene/ScenePlug.h"
+#include "GafferScene/SetAlgo.h"
 #include "GafferScene/ShaderTweaks.h"
 #include "GafferScene/ShuffleAttributes.h"
 
+#include "Gaffer/ArrayPlug.h"
 #include "Gaffer/Context.h"
+#include "Gaffer/Expression.h"
 #include "Gaffer/Monitor.h"
+#include "Gaffer/NameSwitch.h"
+#include "Gaffer/Private/IECorePreview/LRUCache.h"
 #include "Gaffer/Process.h"
 #include "Gaffer/ScriptNode.h"
 
 #include "IECoreScene/Camera.h"
 #include "IECoreScene/ClippingPlane.h"
 #include "IECoreScene/CoordinateSystem.h"
-#include "IECoreScene/MatrixMotionTransform.h"
 #include "IECoreScene/VisibleRenderable.h"
 
 #include "IECore/MessageHandler.h"
@@ -64,9 +70,12 @@
 #include "boost/algorithm/string/predicate.hpp"
 #include "boost/unordered_map.hpp"
 
+#include "tbb/concurrent_unordered_set.h"
+#include "tbb/enumerable_thread_specific.h"
 #include "tbb/parallel_for.h"
 #include "tbb/spin_mutex.h"
-#include "tbb/task.h"
+
+#include "fmt/format.h"
 
 using namespace std;
 using namespace Imath;
@@ -113,19 +122,63 @@ void filteredNodesWalk( Plug *filterPlug, std::unordered_set<FilteredSceneProces
 
 struct ThreadablePathAccumulator
 {
-	ThreadablePathAccumulator( PathMatcher &result): m_result( result ){}
 
 	bool operator()( const GafferScene::ScenePlug *scene, const GafferScene::ScenePlug::ScenePath &path )
 	{
-		tbb::spin_mutex::scoped_lock lock( m_mutex );
-		m_result.addPath( path );
+		m_threadResults.local().addPath( path );
 		return true;
 	}
 
-	tbb::spin_mutex m_mutex;
-	PathMatcher &m_result;
+	IECore::PathMatcher result()
+	{
+		return m_threadResults.combine(
+			[] ( const PathMatcher &a, const PathMatcher &b ) {
+				PathMatcher c = a;
+				c.addPaths( b );
+				return c;
+			}
+		);
+	}
+
+	private :
+
+		tbb::enumerable_thread_specific<PathMatcher> m_threadResults;
 
 };
+
+struct ThreadablePathHashAccumulator
+{
+	ThreadablePathHashAccumulator(): m_h1Accum( 0 ), m_h2Accum( 0 ){}
+
+	bool operator()( const GafferScene::ScenePlug *scene, const GafferScene::ScenePlug::ScenePath &path )
+	{
+		// The hash should depend on all the paths visited, but doesn't depend on the order we visit them
+		// - in fact it must be consistent even when parallel traversal visits in a non-deterministic order.
+		// We can achieve this by summing all the element hashes into an atomic accumulator - because any
+		// change gets evenly distributed into the bit pattern of the MurmurHash, this sum will change if
+		// any element changes, but is not affected by what order the sum runs in.
+		// There isn't an easy way to do a 128 bit atomic sum, but two 64 bit sums should be pretty well
+		// as good ( the only weakness I can see is that if you summed 2**64 identical hashes, they would
+		// cancel out, but I can't see that arising here ).
+		IECore::MurmurHash h;
+		if( path.size() )
+		{
+			h.append( path.data(), path.size() );
+		}
+		else
+		{
+			h.append( 0 );
+		}
+		m_h1Accum += h.h1();
+		m_h2Accum += h.h2();
+		return true;
+	}
+
+	std::atomic<uint64_t> m_h1Accum, m_h2Accum;
+};
+
+IECore::InternedString g_hashProcessType( ValuePlug::hashProcessType() );
+IECore::InternedString g_computeProcessType( ValuePlug::computeProcessType() );
 
 } // namespace
 
@@ -141,16 +194,71 @@ void GafferScene::SceneAlgo::matchingPaths( const Filter *filter, const ScenePlu
 	matchingPaths( filter->outPlug(), scene, paths );
 }
 
-void GafferScene::SceneAlgo::matchingPaths( const Gaffer::IntPlug *filterPlug, const ScenePlug *scene, PathMatcher &paths )
+void GafferScene::SceneAlgo::matchingPaths( const FilterPlug *filterPlug, const ScenePlug *scene, PathMatcher &paths )
 {
-	ThreadablePathAccumulator f( paths );
+	ThreadablePathAccumulator f;
 	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filterPlug, f );
+	paths = f.result();
+}
+
+void GafferScene::SceneAlgo::matchingPaths( const FilterPlug *filterPlug, const ScenePlug *scene, const ScenePlug::ScenePath &root, IECore::PathMatcher &paths )
+{
+	ThreadablePathAccumulator f;
+	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filterPlug, f, root );
+	paths = f.result();
 }
 
 void GafferScene::SceneAlgo::matchingPaths( const PathMatcher &filter, const ScenePlug *scene, PathMatcher &paths )
 {
-	ThreadablePathAccumulator f( paths );
+	ThreadablePathAccumulator f;
 	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filter, f );
+	paths = f.result();
+}
+
+IECore::MurmurHash GafferScene::SceneAlgo::matchingPathsHash( const Filter *filter, const ScenePlug *scene )
+{
+	return matchingPathsHash( filter->outPlug(), scene );
+}
+
+IECore::MurmurHash GafferScene::SceneAlgo::matchingPathsHash( const GafferScene::FilterPlug *filterPlug, const ScenePlug *scene )
+{
+	ThreadablePathHashAccumulator f;
+	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filterPlug, f );
+	return IECore::MurmurHash( f.m_h1Accum, f.m_h2Accum );
+}
+
+IECore::MurmurHash GafferScene::SceneAlgo::matchingPathsHash( const GafferScene::FilterPlug *filterPlug, const ScenePlug *scene, const ScenePlug::ScenePath &root )
+{
+	ThreadablePathHashAccumulator f;
+	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filterPlug, f, root );
+	return IECore::MurmurHash( f.m_h1Accum, f.m_h2Accum );
+}
+
+IECore::MurmurHash GafferScene::SceneAlgo::matchingPathsHash( const PathMatcher &filter, const ScenePlug *scene )
+{
+	ThreadablePathHashAccumulator f;
+	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filter, f );
+	return IECore::MurmurHash( f.m_h1Accum, f.m_h2Accum );
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Searching
+//////////////////////////////////////////////////////////////////////////
+
+IECore::PathMatcher GafferScene::SceneAlgo::findAllWithAttribute( const ScenePlug *scene, IECore::InternedString name, const IECore::Object *value, const ScenePlug::ScenePath &root )
+{
+	return findAll(
+		scene,
+		[&] ( const ScenePlug *scene, const ScenePlug::ScenePath &path ) {
+			ConstCompoundObjectPtr attributes = scene->attributesPlug()->getValue();
+			if( const Object *attribute = attributes->member<Object>( name ) )
+			{
+				return !value || attribute->isEqualTo( value );
+			}
+			return false;
+		},
+		root
+	);
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -182,9 +290,6 @@ IECore::ConstCompoundObjectPtr GafferScene::SceneAlgo::globalAttributes( const I
 
 Imath::V2f GafferScene::SceneAlgo::shutter( const IECore::CompoundObject *globals, const ScenePlug *scene )
 {
-	const BoolData *cameraBlurData = globals->member<BoolData>( "option:render:cameraBlur" );
-	const bool cameraBlur = cameraBlurData ? cameraBlurData->readable() : false;
-
 	const BoolData *transformBlurData = globals->member<BoolData>( "option:render:transformBlur" );
 	const bool transformBlur = transformBlurData ? transformBlurData->readable() : false;
 
@@ -192,7 +297,7 @@ Imath::V2f GafferScene::SceneAlgo::shutter( const IECore::CompoundObject *global
 	const bool deformationBlur = deformationBlurData ? deformationBlurData->readable() : false;
 
 	V2f shutter( Context::current()->getFrame() );
-	if( cameraBlur || transformBlur || deformationBlur )
+	if( transformBlur || deformationBlur )
 	{
 		ConstCameraPtr camera = nullptr;
 		const StringData *cameraOption = globals->member<StringData>( "option:render:camera" );
@@ -256,7 +361,7 @@ IECore::ConstCompoundDataPtr GafferScene::SceneAlgo::sets( const ScenePlug *scen
 			ScenePlug::SetScope setScope( threadState );
 			for( size_t i=r.begin(); i!=r.end(); ++i )
 			{
-				setScope.setSetName( setNames[i] );
+				setScope.setSetName( &setNames[i] );
 				setsVector[i] = scene->setPlug()->getValue();
 			}
 
@@ -283,11 +388,13 @@ IECore::ConstCompoundDataPtr GafferScene::SceneAlgo::sets( const ScenePlug *scen
 namespace
 {
 
+const std::string g_optionPrefix( "option:" );
+
 struct CapturedProcess
 {
 
-	typedef std::unique_ptr<CapturedProcess> Ptr;
-	typedef vector<Ptr> PtrVector;
+	using Ptr = std::unique_ptr<CapturedProcess>;
+	using PtrVector = vector<Ptr>;
 
 	InternedString type;
 	ConstPlugPtr plug;
@@ -298,6 +405,8 @@ struct CapturedProcess
 
 };
 
+const InternedString g_processedObjectPlugName( "__processedObject" );
+
 /// \todo Perhaps add this to the Gaffer module as a
 /// public class, and expose it within the stats app?
 /// Give a bit more thought to the CapturedProcess
@@ -307,7 +416,7 @@ class CapturingMonitor : public Monitor
 
 	public :
 
-		CapturingMonitor()
+		CapturingMonitor( IECore::InternedString scenePlugChildName ) : m_scenePlugChildName( scenePlugChildName )
 		{
 		}
 
@@ -326,20 +435,43 @@ class CapturingMonitor : public Monitor
 
 		void processStarted( const Process *process ) override
 		{
-			CapturedProcess::Ptr capturedProcess( new CapturedProcess );
+			const Plug *p = process->plug();
+
+			if( !shouldCapture( p ) )
+			{
+				// Parents may spawn other processes in support of the requested plug. This is one
+				// of these other plugs that isn't directly the requested plug.  Instead of creating
+				// a CapturedProcess record, we instead create a Monitor::Scope that turns off this
+				// monitor, so that the child computations that we don't need to monitor can go faster.
+				//
+				// It's crucial that this Scope gets destructed while leaving this process, so that the
+				// order of the stack is preserved - if this happens out of order, the stack will be
+				// corrupted, and weird crashes will happen.  But as long as it is created in
+				// processStarted, and released in processFinished, everything should line up.
+				Mutex::scoped_lock lock( m_mutex );
+				m_processMap[process] = std::make_unique<Monitor::Scope>( this, false );
+				return;
+			}
+
+			// Capture this process.
+
+			CapturedProcess::Ptr capturedProcess = std::make_unique<CapturedProcess>();
 			capturedProcess->type = process->type();
-			capturedProcess->plug = process->plug();
+			capturedProcess->plug = p;
 			capturedProcess->destinationPlug = process->destinationPlug();
 			capturedProcess->context = new Context( *process->context(), /* omitCanceller = */ true );
 
 			Mutex::scoped_lock lock( m_mutex );
-
 			m_processMap[process] = capturedProcess.get();
 
 			ProcessMap::const_iterator it = m_processMap.find( process->parent() );
 			if( it != m_processMap.end() )
 			{
-				it->second->children.push_back( std::move( capturedProcess ) );
+				CapturedProcess * const * parent = std::get_if<CapturedProcess *>( &it->second );
+				if( parent && *parent )
+				{
+					(*parent)->children.push_back( std::move( capturedProcess ) );
+				}
 			}
 			else
 			{
@@ -347,6 +479,13 @@ class CapturingMonitor : public Monitor
 				// before we were made active via `Monitor::Scope`.
 				m_rootProcesses.push_back( std::move( capturedProcess ) );
 			}
+
+			// Remember that we've monitored this process so that we dont force
+			// its monitoring again.
+
+			IECore::MurmurHash h = process->context()->hash();
+			h.append( reinterpret_cast<intptr_t>( p ) );
+			m_monitoredSet.insert( h );
 		}
 
 		void processFinished( const Process *process ) override
@@ -355,20 +494,59 @@ class CapturingMonitor : public Monitor
 			m_processMap.erase( process );
 		}
 
+		bool mightForceMonitoring() override
+		{
+			return true;
+		}
+
+		bool forceMonitoring( const Plug *plug, const IECore::InternedString &processType ) override
+		{
+			if( processType != g_hashProcessType || !shouldCapture( plug ) )
+			{
+				return false;
+			}
+
+			// Don't force the monitoring of a process we've monitored already. This does
+			// mean we throw away diamond dependencies in the process graph, but it is essential
+			// for performance in some cases - see `testHistoryDiamondPerformance()` for example.
+			/// \todo Potentially we could use the hash to find the previously captured process,
+			/// and instance that into our process graph. This would require clients of `History`
+			/// to be updated to handle such topologies efficiently by tracking previously visited
+			/// items. It may also be of fairly low value, since typically our goal is to find the
+			/// first relevant path through the graph to present to the user.
+			IECore::MurmurHash h = Context::current()->hash();
+			h.append( reinterpret_cast<intptr_t>( plug ) );
+			return !m_monitoredSet.count( h );
+		}
+
 	private :
 
-		typedef tbb::spin_mutex Mutex;
+		bool shouldCapture( const Plug *plug ) const
+		{
+			return
+				( plug->parent<ScenePlug>() && plug->getName() == m_scenePlugChildName ) ||
+				( (Gaffer::TypeId)plug->typeId() == Gaffer::TypeId::ObjectPlugTypeId && plug->getName() == g_processedObjectPlugName ) ||
+				runTimeCast<const Expression>( plug->node() )
+			;
+		}
 
+		using Mutex = tbb::spin_mutex;
+		using ProcessOrScope = std::variant<CapturedProcess *, std::unique_ptr<Monitor::Scope>>;
+		using ProcessMap = boost::unordered_map<const Process *, ProcessOrScope>;
+
+		const IECore::InternedString m_scenePlugChildName;
+
+		// Protects `m_processMap` and `m_rootProcesses`.
+		/// \todo Perhaps they should be concurrent containers instead?
 		Mutex m_mutex;
-		typedef boost::unordered_map<const Process *, CapturedProcess *> ProcessMap;
 		ProcessMap m_processMap;
 		CapturedProcess::PtrVector m_rootProcesses;
+
+		tbb::concurrent_unordered_set<IECore::MurmurHash> m_monitoredSet;
 
 };
 
 IE_CORE_DECLAREPTR( CapturingMonitor )
-
-uint64_t g_historyID = 0;
 
 SceneAlgo::History::Ptr historyWalk( const CapturedProcess *process, InternedString scenePlugChildName, SceneAlgo::History *parent )
 {
@@ -383,9 +561,7 @@ SceneAlgo::History::Ptr historyWalk( const CapturedProcess *process, InternedStr
 		ScenePlug *scene = plug->parent<ScenePlug>();
 		if( scene && plug == scene->getChild( scenePlugChildName ) )
 		{
-			ContextPtr cleanContext = new Context( *process->context, Context::Copied );
-			cleanContext->remove( SceneAlgo::historyIDContextName() );
-			SceneAlgo::History::Ptr history = new SceneAlgo::History( scene, cleanContext );
+			SceneAlgo::History::Ptr history = new SceneAlgo::History( scene, process->context );
 			if( !result )
 			{
 				result = history;
@@ -403,29 +579,10 @@ SceneAlgo::History::Ptr historyWalk( const CapturedProcess *process, InternedStr
 
 	for( const auto &p : process->children )
 	{
-		// Parents may spawn other processes in support of the requested plug.
-		// We don't want these to show up in history output, so we only include
-		// ones that are directly in service of the requested plug.
-		if( p->plug->parent<ScenePlug>() && p->plug->getName() == scenePlugChildName )
-		{
-			historyWalk( p.get(), scenePlugChildName, parent );
-		}
+		historyWalk( p.get(), scenePlugChildName, parent );
 	}
 
 	return result;
-}
-
-/// \todo It's error prone to have to use SceneScope like this. Consider
-/// improvements to the FilterPlug so that you're forced to pass a scene
-/// somehow. The use of the context to provide the input scene is questionable
-/// anyway, and we don't tend to cache evaluations for `Filter.out`. So perhaps
-/// Filters shouldn't even be ComputeNodes, and FilterPlug shouldn't be an
-/// IntPlug, and instead we should pass a scene directly to some sort of
-/// `FilterPlug::match( const ScenePlug *scene )` method?
-int filterResult( const FilterPlug *filter, const ScenePlug *scene )
-{
-	FilterPlug::SceneScope scope( Context::current(), scene );
-	return filter->getValue();
 }
 
 void addGenericAttributePredecessors( const SceneAlgo::History::Predecessors &source, SceneAlgo::AttributeHistory *destination )
@@ -439,11 +596,22 @@ void addGenericAttributePredecessors( const SceneAlgo::History::Predecessors &so
 	}
 }
 
+void addGenericOptionPredecessors( const SceneAlgo::History::Predecessors &source, SceneAlgo::OptionHistory *destination )
+{
+	for( auto &h : source )
+	{
+		if( auto oh = SceneAlgo::optionHistory( h.get(), destination->optionName ) )
+		{
+			destination->predecessors.push_back( oh );
+		}
+	}
+}
+
 void addCopyAttributesPredecessors( const CopyAttributes *copyAttributes, const SceneAlgo::History::Predecessors &source, SceneAlgo::AttributeHistory *destination )
 {
 	const ScenePlug *sourceScene = copyAttributes->inPlug();
 	if(
-		( filterResult( copyAttributes->filterPlug(), copyAttributes->inPlug() ) & PathMatcher::ExactMatch ) &&
+		( copyAttributes->filterPlug()->match( copyAttributes->inPlug() ) & PathMatcher::ExactMatch ) &&
 		StringAlgo::matchMultiple( destination->attributeName, copyAttributes->attributesPlug()->getValue() )
 	)
 	{
@@ -479,6 +647,27 @@ void addCopyAttributesPredecessors( const CopyAttributes *copyAttributes, const 
 	}
 }
 
+void addCopyOptionsPredecessors( const CopyOptions *copyOptions, const SceneAlgo::History::Predecessors &source, SceneAlgo::OptionHistory *destination )
+{
+	const ScenePlug *sourceScene = copyOptions->inPlug();
+	if( StringAlgo::matchMultiple( destination->optionName, copyOptions->optionsPlug()->getValue() ) )
+	{
+		ConstCompoundObjectPtr sourceOptions = copyOptions->sourcePlug()->globalsPlug()->getValue();
+		if( sourceOptions->members().count( g_optionPrefix + destination->optionName.string() ) )
+		{
+			sourceScene = copyOptions->sourcePlug();
+		}
+	}
+
+	for( auto &h : source )
+	{
+		if( h->scene == sourceScene )
+		{
+			destination->predecessors.push_back( SceneAlgo::optionHistory( h.get(), destination->optionName ) );
+		}
+	}
+}
+
 void addShuffleAttributesPredecessors( const ShuffleAttributes *shuffleAttributes, const SceneAlgo::History::Predecessors &source, SceneAlgo::AttributeHistory *destination )
 {
 	// We have no way of introspecting the operation of a ShufflePlug, so we resort
@@ -486,7 +675,7 @@ void addShuffleAttributesPredecessors( const ShuffleAttributes *shuffleAttribute
 	// has come from.
 
 	InternedString sourceAttributeName = destination->attributeName;
-	if( filterResult( shuffleAttributes->filterPlug(), shuffleAttributes->inPlug() ) & PathMatcher::ExactMatch )
+	if( shuffleAttributes->filterPlug()->match( shuffleAttributes->inPlug() ) & PathMatcher::ExactMatch )
 	{
 		auto inputAttributes = shuffleAttributes->inPlug()->attributesPlug()->getValue();
 		map<InternedString, InternedString> shuffledNames;
@@ -502,7 +691,7 @@ void addShuffleAttributesPredecessors( const ShuffleAttributes *shuffleAttribute
 	destination->predecessors.push_back( SceneAlgo::attributeHistory( source[0].get(), sourceAttributeName ) );
 }
 
-void addLocaliseAttributesPredecessors( const LocaliseAttributes *localiseAttributes, const SceneAlgo::History::Predecessors &source, SceneAlgo::AttributeHistory *destination )
+void addLocaliseAttributesPredecessors( const SceneAlgo::History::Predecessors &source, SceneAlgo::AttributeHistory *destination )
 {
 	// No need to check if the node is filtered to this location.
 	// Filtered or unfiltered, it's all the same : the predecessor
@@ -525,7 +714,11 @@ void addLocaliseAttributesPredecessors( const LocaliseAttributes *localiseAttrib
 		}
 	}
 
-	assert( predecessor );
+	if( !predecessor )
+	{
+		return;
+	}
+
 	destination->predecessors.push_back( predecessor );
 }
 
@@ -547,6 +740,24 @@ void addMergeScenesPredecessors( const MergeScenes *mergeScenes, const SceneAlgo
 	destination->predecessors.push_back( predecessor );
 }
 
+void addMergeScenesPredecessors( const MergeScenes *mergeScenes, const SceneAlgo::History::Predecessors &source, SceneAlgo::OptionHistory *destination )
+{
+	// MergeScenes evaluates in an order whereby the last input with
+	// the option wins.
+
+	SceneAlgo::OptionHistory::Ptr predecessor;
+	for( auto &h : source )
+	{
+		if( auto p = optionHistory( h.get(), destination->optionName ) )
+		{
+			predecessor = p;
+		}
+	}
+
+	assert( predecessor );
+	destination->predecessors.push_back( predecessor );
+}
+
 SceneProcessor *objectTweaksWalk( const SceneAlgo::History *h )
 {
 	if( auto tweaks = h->scene->parent<CameraTweaks>() )
@@ -554,7 +765,7 @@ SceneProcessor *objectTweaksWalk( const SceneAlgo::History *h )
 		if( h->scene == tweaks->outPlug() )
 		{
 			Context::Scope contextScope( h->context.get() );
-			if( filterResult( tweaks->filterPlug(), tweaks->inPlug() ) & PathMatcher::ExactMatch )
+			if( tweaks->filterPlug()->match( tweaks->inPlug() ) & PathMatcher::ExactMatch )
 			{
 				return tweaks;
 			}
@@ -581,7 +792,7 @@ ShaderTweaks *shaderTweaksWalk( const SceneAlgo::AttributeHistory *h )
 			Context::Scope contextScope( h->context.get() );
 			if(
 				StringAlgo::matchMultiple( h->attributeName, tweaks->shaderPlug()->getValue() ) &&
-				( filterResult( tweaks->filterPlug(), tweaks->inPlug() ) & PathMatcher::ExactMatch )
+				( tweaks->filterPlug()->match( tweaks->inPlug() ) & PathMatcher::ExactMatch )
 			)
 			{
 				return tweaks;
@@ -602,26 +813,46 @@ ShaderTweaks *shaderTweaksWalk( const SceneAlgo::AttributeHistory *h )
 
 } // namespace
 
-InternedString SceneAlgo::historyIDContextName()
-{
-	static InternedString s( "__sceneAlgoHistory:id" );
-	return s;
-}
-
 SceneAlgo::History::Ptr SceneAlgo::history( const Gaffer::ValuePlug *scenePlugChild, const ScenePlug::ScenePath &path )
 {
 	if( !scenePlugChild->parent<ScenePlug>() )
 	{
-		throw IECore::Exception( boost::str(
-			boost::format( "Plug \"%1%\" is not a child of a ScenePlug." ) % scenePlugChild->fullName()
-		) );
+		throw IECore::Exception(
+			fmt::format( "Plug \"{}\" is not a child of a ScenePlug.", scenePlugChild->fullName() )
+		);
 	}
 
-	CapturingMonitorPtr monitor = new CapturingMonitor;
+	CapturingMonitorPtr monitor = new CapturingMonitor( scenePlugChild->getName() );
 	{
-		ScenePlug::PathScope pathScope( Context::current(), path );
-		// Trick to bypass the hash cache and get a full upstream evaluation.
-		pathScope.set( historyIDContextName(), g_historyID++ );
+		ScenePlug::PathScope pathScope( Context::current(), &path );
+		Monitor::Scope monitorScope( monitor );
+		scenePlugChild->hash();
+	}
+
+	if( monitor->rootProcesses().size() == 0 )
+	{
+		return new History(
+			const_cast<ScenePlug *>( scenePlugChild->parent<ScenePlug>() ),
+			new Context( *Context::current(), /* omitCanceller = */ true )
+		);
+	}
+
+	assert( monitor->rootProcesses().size() == 1 );
+	return historyWalk( monitor->rootProcesses().front().get(), scenePlugChild->getName(), nullptr );
+}
+
+SceneAlgo::History::Ptr SceneAlgo::history( const Gaffer::ValuePlug *scenePlugChild )
+{
+	if( !scenePlugChild->parent<ScenePlug>() )
+	{
+		throw IECore::Exception(
+			fmt::format( "Plug \"{}\" is not a child of a ScenePlug.", scenePlugChild->fullName() )
+		);
+	}
+
+	CapturingMonitorPtr monitor = new CapturingMonitor( scenePlugChild->getName() );
+	{
+		ScenePlug::GlobalScope globalScope( Context::current() );
 		Monitor::Scope monitorScope( monitor );
 		scenePlugChild->hash();
 	}
@@ -672,13 +903,21 @@ SceneAlgo::AttributeHistory::Ptr SceneAlgo::attributeHistory( const SceneAlgo::H
 		{
 			addShuffleAttributesPredecessors( shuffleAttributes, attributesHistory->predecessors, result.get() );
 		}
-		else if( auto localiseAttributes = runTimeCast<const LocaliseAttributes>( node ) )
+		else if( runTimeCast<const LocaliseAttributes>( node ) )
 		{
-			addLocaliseAttributesPredecessors( localiseAttributes, attributesHistory->predecessors, result.get() );
+			addLocaliseAttributesPredecessors( attributesHistory->predecessors, result.get() );
 		}
 		else if( auto mergeScenes = runTimeCast<const MergeScenes>( node ) )
 		{
 			addMergeScenesPredecessors( mergeScenes, attributesHistory->predecessors, result.get() );
+		}
+		else if( runTimeCast<const AttributeTweaks>( node ) )
+		{
+			addLocaliseAttributesPredecessors( attributesHistory->predecessors, result.get() );
+		}
+		else if( runTimeCast<const ShaderTweaks>( node ) )
+		{
+			addLocaliseAttributesPredecessors( attributesHistory->predecessors, result.get() );
 		}
 		else
 		{
@@ -688,6 +927,53 @@ SceneAlgo::AttributeHistory::Ptr SceneAlgo::attributeHistory( const SceneAlgo::H
 	else
 	{
 		addGenericAttributePredecessors( attributesHistory->predecessors, result.get() );
+	}
+
+	return result;
+}
+
+SceneAlgo::OptionHistory::Ptr SceneAlgo::optionHistory( const SceneAlgo::History *globalsHistory, const IECore::InternedString &option )
+{
+	Context::Scope scopedContext( globalsHistory->context.get() );
+	ConstCompoundObjectPtr globals = globalsHistory->scene->globalsPlug()->getValue();
+	ConstObjectPtr optionValue = globals->member<Object>( g_optionPrefix + option.string() );
+
+	if( !optionValue )
+	{
+		return nullptr;
+	}
+
+	SceneAlgo::OptionHistory::Ptr result = new OptionHistory(
+		globalsHistory->scene, globalsHistory->context,
+		option, optionValue
+	);
+
+	// Filter the _globals_ history to include only predecessors which
+	// contribute specifically to our single _option_. In the absence of
+	// a SceneNode-level API for querying option sources, we resort to
+	// special case code for backtracking through certain node types.
+	/// \todo Consider an official API that allows the nodes themselves to
+	/// take responsibility for this backtracking.
+
+	auto node = runTimeCast<const SceneNode>( globalsHistory->scene->node() );
+	if( node && node->enabledPlug()->getValue() && globalsHistory->scene == node->outPlug() )
+	{
+		if( auto copyOptions = runTimeCast<const CopyOptions>( node ) )
+		{
+			addCopyOptionsPredecessors( copyOptions, globalsHistory->predecessors, result.get() );
+		}
+		else if( auto mergeScenes = runTimeCast<const MergeScenes>( node ) )
+		{
+			addMergeScenesPredecessors( mergeScenes, globalsHistory->predecessors, result.get() );
+		}
+		else
+		{
+			addGenericOptionPredecessors( globalsHistory->predecessors, result.get() );
+		}
+	}
+	else
+	{
+		addGenericOptionPredecessors( globalsHistory->predecessors, result.get() );
 	}
 
 	return result;
@@ -748,10 +1034,22 @@ std::string SceneAlgo::sourceSceneName( const GafferImage::ImagePlug *image )
 
 	// See if the image has the `gaffer:sourceScene` metadata entry that gives
 	// the root-relative path to the source scene plug
-	const ConstCompoundDataPtr metadata = image->metadata();
-	const StringData *plugPathData = metadata->member<StringData>( "gaffer:sourceScene" );
 
-	return plugPathData ? plugPathData->readable() : "";
+	ConstStringVectorDataPtr views = image->viewNames();
+
+	for( const std::string &view : views->readable() )
+	{
+		GafferImage::ImagePlug::ViewScope viewScope( Context::current() );
+		viewScope.setViewName( &view );
+		ConstCompoundDataPtr metadata = image->metadata();
+		const StringData *plugPathData = metadata->member<StringData>( "gaffer:sourceScene" );
+		if( plugPathData )
+		{
+			return plugPathData->readable();
+		}
+	}
+
+	return "";
 }
 
 ScenePlug *SceneAlgo::sourceScene( GafferImage::ImagePlug *image )
@@ -772,6 +1070,175 @@ ScenePlug *SceneAlgo::sourceScene( GafferImage::ImagePlug *image )
 }
 
 //////////////////////////////////////////////////////////////////////////
+// Light linking
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+InternedString g_lights( "__lights" );
+InternedString g_linkedLights( "linkedLights" );
+
+template<typename AttributesPredicate>
+struct AttributesFinder
+{
+
+	AttributesFinder( const AttributesPredicate &predicate, tbb::spin_mutex &resultMutex, IECore::PathMatcher &result )
+		:	m_predicate( predicate ), m_resultMutex( resultMutex ), m_result( result )
+	{
+	}
+
+	bool operator()( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+	{
+		bool inheritPredicateResult = false;
+		ConstCompoundObjectPtr attributes = scene->attributesPlug()->getValue();
+		if( path.empty() )
+		{
+			// Root
+			m_fullAttributes = attributes;
+		}
+		else
+		{
+			if( attributes->members().empty() )
+			{
+				inheritPredicateResult = true;
+			}
+			else
+			{
+				CompoundObjectPtr fullAttributes = new CompoundObject;
+				fullAttributes->members() = m_fullAttributes->members();
+				for( const auto &a : attributes->members() )
+				{
+					fullAttributes->members()[a.first] = a.second;
+				}
+				m_fullAttributes = fullAttributes;
+			}
+		}
+
+		if( !inheritPredicateResult )
+		{
+			m_predicateResult = m_predicate( m_fullAttributes.get() );
+		}
+		else
+		{
+			// `m_predicateResult` is inherited automatically because `parallelProcessLocations()`
+			// copy-constructs child functors from the parent.
+		}
+
+		if( m_predicateResult && !path.empty() )
+		{
+			/// \todo We could avoid this locking if we added a `functor.gatherChildren()`
+			/// phase to `parallelProcessLocations()` and built the result recursively.
+			tbb::spin_mutex::scoped_lock lock( m_resultMutex );
+			m_result.addPath( path );
+		}
+
+		return true;
+	}
+
+	private :
+
+		const AttributesPredicate &m_predicate;
+
+		ConstCompoundObjectPtr m_fullAttributes;
+		bool m_predicateResult;
+
+		tbb::spin_mutex &m_resultMutex;
+		IECore::PathMatcher &m_result;
+
+};
+
+/// \todo Perhaps this is worthy of inclusion in the public API?
+template<typename AttributesPredicate>
+IECore::PathMatcher findAttributes( const ScenePlug *scene, const AttributesPredicate &predicate )
+{
+	tbb::spin_mutex resultMutex;
+	IECore::PathMatcher result;
+	AttributesFinder<AttributesPredicate> attributesFinder( predicate, resultMutex, result );
+	SceneAlgo::parallelProcessLocations( scene, attributesFinder );
+	return result;
+}
+
+} // namespace
+
+IECore::PathMatcher GafferScene::SceneAlgo::linkedObjects( const ScenePlug *scene, const ScenePlug::ScenePath &light )
+{
+	PathMatcher lights;
+	lights.addPath( light );
+	return linkedObjects( scene, lights );
+}
+
+GAFFERSCENE_API IECore::PathMatcher GafferScene::SceneAlgo::linkedObjects( const ScenePlug *scene, const IECore::PathMatcher &lights )
+{
+	// We expect many locations to have the exact same expression for `linkedLights`,
+	// and evaluating the expression is fairly expensive. So we cache the results for
+	// sharing between locations. The cache only lives for the lifetime of this query.
+	using QueryCache = IECorePreview::LRUCache<std::string, bool, IECorePreview::LRUCachePolicy::TaskParallel>;
+	const Context *context = Context::current();
+	QueryCache queryCache(
+		[&lights, scene, context]( const std::string &setExpression, size_t &cost, const IECore::Canceller *canceller )
+		{
+			cost = 1;
+			Context::Scope scopedContext( context );
+			const IECore::PathMatcher linkedLights = SetAlgo::evaluateSetExpression( setExpression, scene );
+			for( PathMatcher::Iterator lightIt = lights.begin(), eIt = lights.end(); lightIt != eIt; ++lightIt )
+			{
+				if( linkedLights.match( *lightIt ) & PathMatcher::ExactMatch )
+				{
+					return true;
+				}
+			}
+			return false;
+		},
+		10000
+	);
+
+	IECore::PathMatcher result = findAttributes(
+		scene,
+		[&queryCache] ( const CompoundObject *fullAttributes ) {
+			auto *linkedLights = fullAttributes->member<StringData>( g_linkedLights );
+			return queryCache.get( linkedLights ? linkedLights->readable() : "defaultLights" );
+		}
+	);
+
+	result.removePaths( scene->set( g_lights )->readable() );
+	return result;
+}
+
+IECore::PathMatcher GafferScene::SceneAlgo::linkedLights( const ScenePlug *scene, const ScenePlug::ScenePath &object )
+{
+	IECore::ConstCompoundObjectPtr attributes = scene->fullAttributes( object );
+	auto *linkedLightsAttribute = attributes->member<StringData>( g_linkedLights );
+	const string linkedLights = linkedLightsAttribute ? linkedLightsAttribute->readable() : "defaultLights";
+	IECore::PathMatcher linkedPaths = SetAlgo::evaluateSetExpression( linkedLights, scene );
+	return linkedPaths.intersection( scene->set( g_lights )->readable() );
+}
+
+IECore::PathMatcher GafferScene::SceneAlgo::linkedLights( const ScenePlug *scene, const IECore::PathMatcher &objects )
+{
+	tbb::spin_mutex resultMutex;
+	IECore::PathMatcher result;
+	tbb::concurrent_unordered_set<std::string> processed;
+
+	auto functor = [&resultMutex, &result, &processed] ( const ScenePlug *scene, const ScenePlug::ScenePath &path ) {
+		IECore::ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
+		auto *linkedLightsAttribute = attributes->member<StringData>( g_linkedLights );
+		const string linkedLights = linkedLightsAttribute ? linkedLightsAttribute->readable() : "defaultLights";
+		if( processed.insert( linkedLights ).second )
+		{
+			ScenePlug::GlobalScope globalScope( Context::current() );
+			IECore::PathMatcher linkedPaths = SetAlgo::evaluateSetExpression( linkedLights, scene );
+			tbb::spin_mutex::scoped_lock resultLock( resultMutex );
+			result.addPaths( linkedPaths );
+		}
+		return true;
+	};
+
+	filteredParallelTraverse( scene, objects, functor );
+	return result.intersection( scene->set( g_lights )->readable() );
+}
+
+//////////////////////////////////////////////////////////////////////////
 // Miscellaneous
 //////////////////////////////////////////////////////////////////////////
 
@@ -788,7 +1255,7 @@ bool GafferScene::SceneAlgo::visible( const ScenePlug *scene, const ScenePlug::S
 	for( ScenePlug::ScenePath::const_iterator it = path.begin(), eIt = path.end(); it != eIt; ++it )
 	{
 		p.push_back( *it );
-		pathScope.setPath( p );
+		pathScope.setPath( &p );
 
 		ConstCompoundObjectPtr attributes = scene->attributesPlug()->getValue();
 		const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
@@ -827,4 +1294,286 @@ Imath::Box3f GafferScene::SceneAlgo::bound( const IECore::Object *object )
 	{
 		return Imath::Box3f();
 	}
+}
+
+namespace
+{
+
+const InternedString g_emptyInternedString;
+const InternedString g_ellipsisInternedString( "..." );
+const InternedString g_parentInternedString( ".." );
+
+} // namespace
+
+void GafferScene::SceneAlgo::validateName( IECore::InternedString name )
+{
+	const char *invalidReason = nullptr;
+	if( name == g_emptyInternedString )
+	{
+		invalidReason = "it is empty";
+	}
+	else if( name == g_ellipsisInternedString )
+	{
+		invalidReason = "`...` is a filter wildcard";
+	}
+	else if( name == g_parentInternedString )
+	{
+		invalidReason = "`..` denotes the parent location";
+	}
+	else if( name.string().find( '/' ) != string::npos )
+	{
+		invalidReason = "`/` is the path separator";
+	}
+	else if( StringAlgo::hasWildcards( name.string() ) )
+	{
+		invalidReason = "it contains filter wildcards";
+	}
+
+	if( invalidReason )
+	{
+		throw IECore::Exception(
+			fmt::format( "Name `{}` is invalid (because {})", name.string(), invalidReason )
+		);
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Render Adaptor Registry
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+struct RenderAdaptorRegistration
+{
+	SceneAlgo::RenderAdaptor creator;
+	std::string client;
+	std::string renderer;
+};
+
+using RenderAdaptors = boost::container::flat_map<string, RenderAdaptorRegistration>;
+
+RenderAdaptors &renderAdaptors()
+{
+	static RenderAdaptors *a = new RenderAdaptors;
+	return *a;
+}
+
+SceneProcessorPtr createRenderAdaptor( const RenderAdaptorRegistration &registration )
+{
+	SceneProcessorPtr adaptor = registration.creator();
+	if( !adaptor )
+	{
+		return nullptr;
+	}
+
+	if( registration.client == "*" && registration.renderer == "*" )
+	{
+		return adaptor;
+	}
+
+	// Wrap using NameSwitches to enable/disable based on client/renderer.
+
+	SceneProcessorPtr wrapper = new SceneProcessor;
+	wrapper->addChild( new StringPlug( "client" ) );
+	wrapper->addChild( new StringPlug( "renderer" ) );
+	wrapper->addChild( adaptor );
+	adaptor->inPlug()->setInput( wrapper->inPlug() );
+
+	ScenePlug *out = adaptor->outPlug();
+
+	for( const auto &scope : { string( "client" ), string( "renderer" ) } )
+	{
+		if( auto p = adaptor->getChild<StringPlug>( scope ) )
+		{
+			p->setInput( wrapper->getChild<StringPlug>( scope ) );
+		}
+
+		const std::string &scopeValue = scope == "client" ? registration.client : registration.renderer;
+		if( scopeValue == "*" )
+		{
+			continue;
+		}
+
+		NameSwitchPtr nameSwitch = new NameSwitch( scope + "Switch" );
+		wrapper->addChild( nameSwitch );
+		nameSwitch->setup( out );
+		nameSwitch->inPlugs()->getChild<NameValuePlug>( 0 )->valuePlug()->setInput( wrapper->inPlug() );
+		nameSwitch->inPlugs()->getChild<NameValuePlug>( 1 )->valuePlug()->setInput( out );
+		nameSwitch->selectorPlug()->setInput( wrapper->getChild<Plug>( scope ) );
+		/// \todo Remove "unspecified" - see matching comment in `createRenderAdaptors()`.
+		nameSwitch->inPlugs()->getChild<NameValuePlug>( 1 )->namePlug()->setValue( scopeValue + " unspecified" );
+
+		out = nameSwitch->outPlug()->getChild<ScenePlug>( "value" );
+	}
+
+	wrapper->outPlug()->setInput( out );
+
+	return wrapper;
+}
+
+} // namespace
+
+void GafferScene::SceneAlgo::registerRenderAdaptor( const std::string &name, RenderAdaptor adaptor, const std::string &client, const std::string &renderer )
+{
+	renderAdaptors()[name] = { adaptor, client, renderer };
+}
+
+void GafferScene::SceneAlgo::registerRenderAdaptor( const std::string &name, SceneAlgo::RenderAdaptor adaptor )
+{
+	registerRenderAdaptor( name, adaptor, "*", "*" );
+}
+
+void GafferScene::SceneAlgo::deregisterRenderAdaptor( const std::string &name )
+{
+	renderAdaptors().erase( name );
+}
+
+SceneProcessorPtr GafferScene::SceneAlgo::createRenderAdaptors()
+{
+	SceneProcessorPtr result = new SceneProcessor;
+	StringPlugPtr clientPlug = new StringPlug( "client" );
+	StringPlugPtr rendererPlug = new StringPlug( "renderer" );
+	result->addChild( clientPlug );
+	result->addChild( rendererPlug );
+
+	/// \todo Remove, and require all clients to set the plugs themselves.
+	clientPlug->setValue( "unspecified" );
+	rendererPlug->setValue( "unspecified" );
+
+	ScenePlug *in = result->inPlug();
+
+	const RenderAdaptors &adaptors = renderAdaptors();
+	for( const auto &[name, a] : adaptors )
+	{
+		SceneProcessorPtr adaptor = createRenderAdaptor( a );
+		if( !adaptor )
+		{
+			IECore::msg(
+				IECore::Msg::Warning, "SceneAlgo::createRenderAdaptors",
+				fmt::format( "Adaptor \"{}\" returned null", name )
+			);
+			continue;
+		}
+
+		adaptor->setName( name );
+		if( auto s = adaptor->getChild<StringPlug>( "client" ) )
+		{
+			s->setInput( clientPlug.get() );
+		}
+
+		if( auto s = adaptor->getChild<StringPlug>( "renderer" ) )
+		{
+			s->setInput( rendererPlug.get() );
+		}
+
+		result->addChild( adaptor );
+		adaptor->inPlug()->setInput( in );
+		in = adaptor->outPlug();
+	}
+
+	result->outPlug()->setInput( in );
+	return result;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Apply Camera Globals
+//////////////////////////////////////////////////////////////////////////
+
+void GafferScene::SceneAlgo::applyCameraGlobals( IECoreScene::Camera *camera, const IECore::CompoundObject *globals, const ScenePlug *scene )
+{
+	// Set any camera-relevant render globals that haven't been overridden on the camera
+	const IntData *filmFitData = globals->member<IntData>( "option:render:filmFit" );
+	if( !camera->hasFilmFit() && filmFitData )
+	{
+		camera->setFilmFit( (IECoreScene::Camera::FilmFit)filmFitData->readable() );
+	}
+
+	const V2iData *resolutionData = globals->member<V2iData>( "option:render:resolution" );
+	if( !camera->hasResolution() && resolutionData )
+	{
+		camera->setResolution( resolutionData->readable() );
+	}
+
+	const FloatData *resolutionMultiplierData = globals->member<FloatData>( "option:render:resolutionMultiplier" );
+	if( !camera->hasResolutionMultiplier() && resolutionMultiplierData )
+	{
+		camera->setResolutionMultiplier( resolutionMultiplierData->readable() );
+	}
+
+	const FloatData *pixelAspectRatioData = globals->member<FloatData>( "option:render:pixelAspectRatio" );
+	if( !camera->hasPixelAspectRatio() && pixelAspectRatioData )
+	{
+		camera->setPixelAspectRatio( pixelAspectRatioData->readable() );
+	}
+
+	const BoolData *overscanData = globals->member<BoolData>( "option:render:overscan" );
+	bool overscan = overscanData && overscanData->readable();
+	if( camera->hasOverscan() ) overscan = camera->getOverscan();
+	if( overscan )
+	{
+		if( !camera->hasOverscan() )
+		{
+			camera->setOverscan( true );
+		}
+		const FloatData *overscanLeftData = globals->member<FloatData>( "option:render:overscanLeft" );
+		if( !camera->hasOverscanLeft() && overscanLeftData )
+		{
+			camera->setOverscanLeft( overscanLeftData->readable() );
+		}
+		const FloatData *overscanRightData = globals->member<FloatData>( "option:render:overscanRight" );
+		if( !camera->hasOverscanRight() && overscanRightData )
+		{
+			camera->setOverscanRight( overscanRightData->readable() );
+		}
+		const FloatData *overscanTopData = globals->member<FloatData>( "option:render:overscanTop" );
+		if( !camera->hasOverscanTop() && overscanTopData )
+		{
+			camera->setOverscanTop( overscanTopData->readable() );
+		}
+		const FloatData *overscanBottomData = globals->member<FloatData>( "option:render:overscanBottom" );
+		if( !camera->hasOverscanBottom() && overscanBottomData )
+		{
+			camera->setOverscanBottom( overscanBottomData->readable() );
+		}
+	}
+
+	const Box2fData *cropWindowData = globals->member<Box2fData>( "option:render:cropWindow" );
+	if( !camera->hasCropWindow() && cropWindowData )
+	{
+		camera->setCropWindow( cropWindowData->readable() );
+	}
+
+	const BoolData *depthOfFieldData = globals->member<BoolData>( "option:render:depthOfField" );
+	/*if( !camera->hasDepthOfField() && depthOfFieldData )
+	{
+		camera->setDepthOfField( depthOfFieldData->readable() );
+	}*/
+	// \todo - switch to the form above once we have officially added the depthOfField parameter to Cortex.
+	// The plan then would be that the renderer backends should respect camera->getDepthOfField.
+	// For the moment we bake into fStop instead
+	bool depthOfField = false;
+	if( depthOfFieldData )
+	{
+		// First set from render globals
+		depthOfField = depthOfFieldData->readable();
+	}
+	if( const BoolData *d = camera->parametersData()->member<BoolData>( "depthOfField" ) )
+	{
+		// Override based on camera setting
+		depthOfField = d->readable();
+	}
+	if( !depthOfField )
+	{
+		// If there is no depth of field, bake that into the fStop
+		camera->setFStop( 0.0f );
+	}
+
+	// Bake the shutter from the globals into the camera before passing it to the renderer backend
+	//
+	// Before this bake, the shutter is an optional render setting override, with the shutter start
+	// and end relative to the current frame.  After baking, the shutter is currently an absolute
+	// shutter, with the frame added on.  Feels like it might be more consistent if we switched to
+	// always storing a relative shutter in camera->setShutter()
+	camera->setShutter( SceneAlgo::shutter( globals, scene ) );
 }

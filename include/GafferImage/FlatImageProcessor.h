@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_FLATIMAGEPROCESSOR_H
-#define GAFFERIMAGE_FLATIMAGEPROCESSOR_H
+#pragma once
 
 #include "GafferImage/ImageProcessor.h"
 
@@ -53,15 +52,15 @@ class GAFFERIMAGE_API FlatImageProcessor : public ImageProcessor
 
 		/// Constructs with a single input ImagePlug named "in". Use inPlug()
 		/// to access this plug.
-		FlatImageProcessor( const std::string &name=defaultName<FlatImageProcessor>() );
+		explicit FlatImageProcessor( const std::string &name=defaultName<FlatImageProcessor>() );
 
 		/// Constructs with an ArrayPlug called "in". Use inPlug() as a
 		/// convenience for accessing the first child in the array, and use
 		/// inPlugs() to access the array itself.
-		FlatImageProcessor( const std::string &name, size_t minInputs, size_t maxInputs = Imath::limits<size_t>::max() );
+		FlatImageProcessor( const std::string &name, size_t minInputs, size_t maxInputs = std::numeric_limits<size_t>::max() );
 		~FlatImageProcessor() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::FlatImageProcessor, FlatImageProcessorTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::FlatImageProcessor, FlatImageProcessorTypeId, ImageProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -80,5 +79,3 @@ class GAFFERIMAGE_API FlatImageProcessor : public ImageProcessor
 IE_CORE_DECLAREPTR( FlatImageProcessor )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_FLATIMAGEPROCESSOR_H

@@ -44,6 +44,7 @@
 #include "GlobalsBinding.h"
 #include "HierarchyBinding.h"
 #include "IECoreGLPreviewBinding.h"
+#include "IECoreScenePreviewBinding.h"
 #include "IOBinding.h"
 #include "TweaksBinding.h"
 #include "ObjectProcessorBinding.h"
@@ -53,18 +54,22 @@
 #include "PrimitivesBinding.h"
 #include "RenderBinding.h"
 #include "RenderControllerBinding.h"
-#include "RendererAlgoBinding.h"
 #include "SceneAlgoBinding.h"
 #include "ScenePathBinding.h"
 #include "SetAlgoBinding.h"
 #include "ShaderBinding.h"
 #include "TransformBinding.h"
+#include "QueryBinding.h"
+#include "CryptomatteBinding.h"
+#include "VisibleSetBinding.h"
 
 using namespace boost::python;
 using namespace GafferSceneModule;
 
 BOOST_PYTHON_MODULE( _GafferScene )
 {
+
+	bindIECoreScenePreview(); // Must be declared early since some things depend on Procedural being registered
 
 	bindCore();
 	bindFilter();
@@ -73,7 +78,6 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	bindOptions();
 	bindAttributes();
 	bindSceneAlgo();
-	bindRendererAlgo();
 	bindSetAlgo();
 	bindPrimitives();
 	bindScenePath();
@@ -88,5 +92,8 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	bindPrimitiveSampler();
 	bindIECoreGLPreview();
 	bindEditScopeAlgo();
+	bindQueries();
+	bindCryptomatte();
+	bindVisibleSet();
 
 }

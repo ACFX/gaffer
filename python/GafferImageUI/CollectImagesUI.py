@@ -66,7 +66,7 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			"""
-			A list of the new layers to create.
+			A list of values for the `layerVariable`, defining the layers to be collected.
 			""",
 
 		],
@@ -81,6 +81,29 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"addLayerPrefix" : [
+
+			"description",
+			"""
+			When on, the output channel names are automatically prefixed with
+			the name of the layer being collected. Should be turned off when
+			the input channel names already contain the layer name.
+			""",
+
+		],
+
+		"mergeMetadata" : [
+
+			"description",
+			"""
+			Controls how the output metadata is generated from the collected
+			images. By default, the metadata from the first image alone
+			is passed through. When `mergeMetadata` is on, the metadata from
+			all collected images is merged, with the last image winning
+			in the case of multiple image specifying the same piece of metadata.
+			""",
+
+		],
 	}
 
 )

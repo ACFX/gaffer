@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_MAPPROJECTION_H
-#define GAFFERSCENE_MAPPROJECTION_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -55,13 +54,16 @@ class GAFFERSCENE_API MapProjection : public ObjectProcessor
 
 	public :
 
-		MapProjection( const std::string &name=defaultName<MapProjection>() );
+		explicit MapProjection( const std::string &name=defaultName<MapProjection>() );
 		~MapProjection() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MapProjection, MapProjectionTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::MapProjection, MapProjectionTypeId, ObjectProcessor );
 
 		Gaffer::StringPlug *cameraPlug();
 		const Gaffer::StringPlug *cameraPlug() const;
+
+		Gaffer::StringPlug *positionPlug();
+		const Gaffer::StringPlug *positionPlug() const;
 
 		Gaffer::StringPlug *uvSetPlug();
 		const Gaffer::StringPlug *uvSetPlug() const;
@@ -81,5 +83,3 @@ class GAFFERSCENE_API MapProjection : public ObjectProcessor
 IE_CORE_DECLAREPTR( MapProjection )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_MAPPROJECTION_H

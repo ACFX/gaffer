@@ -90,7 +90,7 @@ V2i mirror( const V2i &point, bool horizontal, bool vertical, const Box2i &displ
 // Mirror
 //////////////////////////////////////////////////////////////////////////
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Mirror );
+GAFFER_NODE_DEFINE_TYPE( Mirror );
 
 size_t Mirror::g_firstPlugIndex = 0;
 
@@ -101,6 +101,7 @@ Mirror::Mirror( const std::string &name )
 	addChild( new BoolPlug( "horizontal" ) );
 	addChild( new BoolPlug( "vertical" ) );
 
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );

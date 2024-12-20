@@ -47,11 +47,12 @@
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/UndoScope.h"
 
-#include "OpenEXR/ImathMatrixAlgo.h"
+#include "Imath/ImathMatrixAlgo.h"
 
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 
 using namespace std;
+using namespace boost::placeholders;
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
@@ -59,7 +60,7 @@ using namespace GafferUI;
 using namespace GafferScene;
 using namespace GafferSceneUI;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( TranslateTool );
+GAFFER_NODE_DEFINE_TYPE( TranslateTool );
 
 TranslateTool::ToolDescription<TranslateTool, SceneView> TranslateTool::g_toolDescription;
 
@@ -77,8 +78,8 @@ TranslateTool::TranslateTool( SceneView *view, const std::string &name )
 		HandlePtr handle = new TranslateHandle( axes[i] );
 		handle->setRasterScale( 75 );
 		handles()->setChild( handleNames[i], handle );
-		// connect with group 0, so we get called before the Handle's slot does.
-		handle->dragBeginSignal().connect( 0, boost::bind( &TranslateTool::handleDragBegin, this ) );
+		// Connect at front, so we get called before the Handle's slot does.
+		handle->dragBeginSignal().connectFront( boost::bind( &TranslateTool::handleDragBegin, this ) );
 		handle->dragMoveSignal().connect( boost::bind( &TranslateTool::handleDragMove, this, ::_1, ::_2 ) );
 		handle->dragEndSignal().connect( boost::bind( &TranslateTool::handleDragEnd, this ) );
 	}
@@ -88,7 +89,7 @@ TranslateTool::TranslateTool( SceneView *view, const std::string &name )
 	sg->keyReleaseSignal().connect( boost::bind( &TranslateTool::keyRelease, this, ::_2 ) );
 	sg->leaveSignal().connect( boost::bind( &TranslateTool::sceneGadgetLeave, this, ::_2 ) );
 	// We have to insert this before the underlying SelectionTool connections or it starts an object drag.
-	sg->buttonPressSignal().connect( 0, boost::bind( &TranslateTool::buttonPress, this, ::_2 ) );
+	sg->buttonPressSignal().connectFront( boost::bind( &TranslateTool::buttonPress, this, ::_2 ) );
 
 	// We need to track the tool state/view visibility so we don't leave a lingering target cursor
 	sg->visibilityChangedSignal().connect( boost::bind( &TranslateTool::visibilityChanged, this, ::_1 ) );
@@ -140,7 +141,7 @@ void TranslateTool::updateHandles( float rasterScale )
 	// of the target translation. For each handle, check to see
 	// if each of the plugs it effects are settable, and if not,
 	// disable the handle.
-	for( TranslateHandleIterator it( handles() ); !it.done(); ++it )
+	for( TranslateHandle::Iterator it( handles() ); !it.done(); ++it )
 	{
 		bool enabled = true;
 		for( const auto &s : selection() )
@@ -245,7 +246,7 @@ IECore::RunTimeTypedPtr TranslateTool::handleDragBegin()
 
 bool TranslateTool::handleDragMove( GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
 {
-	UndoScope undoScope( selection().back().editTarget()->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
+	UndoScope undoScope( view()->scriptNode(), UndoScope::Enabled, undoMergeGroup() );
 	const V3f translation = static_cast<TranslateHandle *>( gadget )->translation( event );
 	for( auto &t : m_drag )
 	{
@@ -300,7 +301,7 @@ bool TranslateTool::buttonPress( const GafferUI::ButtonEvent &event )
 		selectionCentroids.extendBy( s.scene()->bound( s.path() ).center() * worldTransform );
 	}
 
-	UndoScope undoScope( selection().back().editTarget()->ancestor<ScriptNode>() );
+	UndoScope undoScope( view()->scriptNode() );
 
 	const V3f offset = targetPos - selectionCentroids.center();
 	for( const auto &s : selection() )

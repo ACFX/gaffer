@@ -39,6 +39,9 @@
 
 #include "Gaffer/Context.h"
 #include "Gaffer/Process.h"
+#include "Gaffer/TypedObjectPlug.h"
+
+#include "boost/algorithm/string/join.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -73,7 +76,7 @@ bool StringPlug::acceptsInput( const Plug *input ) const
 	}
 	if( input )
 	{
-		return input->isInstanceOf( staticTypeId() );
+		return input->isInstanceOf( staticTypeId() ) || input->isInstanceOf( StringVectorDataPlug::staticTypeId() );
 	}
 	return true;
 }
@@ -93,9 +96,20 @@ void StringPlug::setValue( const std::string &value )
 	setObjectValue( new StringData( value ) );
 }
 
-std::string StringPlug::getValue( const IECore::MurmurHash *precomputedHash ) const
+void StringPlug::setValue( const char *value )
 {
-	ConstStringDataPtr s = getObjectValue<StringData>( precomputedHash );
+	setObjectValue( new StringData( value ) );
+}
+
+void StringPlug::setValue( const std::filesystem::path &value )
+{
+	setValue( value.generic_string() );
+}
+
+std::string StringPlug::getValue() const
+{
+	ConstObjectPtr owner;
+	const StringData *s = getObjectValue<StringData>( owner );
 
 	const bool performSubstitutions =
 		m_substitutions &&
@@ -109,10 +123,14 @@ std::string StringPlug::getValue( const IECore::MurmurHash *precomputedHash ) co
 
 void StringPlug::setFrom( const ValuePlug *other )
 {
-	const StringPlug *tOther = IECore::runTimeCast<const StringPlug >( other );
-	if( tOther )
+	if( auto stringPlug = IECore::runTimeCast<const StringPlug >( other ) )
 	{
-		setValue( tOther->getValue() );
+		setValue( stringPlug->getValue() );
+	}
+	else if( auto stringVectorPlug = IECore::runTimeCast<const StringVectorDataPlug >( other ) )
+	{
+		ConstStringVectorDataPtr data = stringVectorPlug->getValue();
+		setValue( boost::algorithm::join( data->readable(), " " ) );
 	}
 	else
 	{
@@ -129,12 +147,17 @@ IECore::MurmurHash StringPlug::hash() const
 
 	if( performSubstitutions )
 	{
-		ConstStringDataPtr s = getObjectValue<StringData>();
+		ConstObjectPtr owner;
+		const StringData *s = getObjectValue<StringData>( owner );
 		if( IECore::StringAlgo::hasSubstitutions( s->readable() ) )
 		{
 			IECore::MurmurHash result;
 			result.append( Context::current()->substitute( s->readable(), m_substitutions ) );
 			return result;
+		}
+		else
+		{
+			return s->Object::hash();
 		}
 	}
 

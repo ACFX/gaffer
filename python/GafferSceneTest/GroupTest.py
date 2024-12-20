@@ -457,7 +457,9 @@ class GroupTest( GafferSceneTest.SceneTestCase ) :
 
 		g2["transform"]["translate"].setValue( imath.V3f( 1, 0, 0 ) )
 
-		self.assertSceneHashesEqual( g1["out"], g2["out"], pathsToIgnore = ( "/", "/group", ) )
+
+		self.assertEqual( g1["out"].transformHash( "/group/plane" ), g2["out"].transformHash( "/group/plane" ) )
+		self.assertEqual( g1["out"].boundHash( "/group/plane" ), g2["out"].boundHash( "/group/plane" ) )
 		self.assertSceneHashesEqual( g1["out"], g2["out"], checks = self.allSceneChecks - { "transform", "bound" } )
 		self.assertNotEqual( g1["out"].transformHash( "/group" ), g2["out"].transformHash( "/group" ) )
 		self.assertEqual( g1["out"].boundHash( "/group" ), g2["out"].boundHash( "/group" ) )
@@ -487,7 +489,7 @@ class GroupTest( GafferSceneTest.SceneTestCase ) :
 			self.assertEqual( g1["out"].transformHash( path1 ), g2["out"].transformHash( path2 ) )
 			self.assertEqual( g1["out"].objectHash( path1 ), g2["out"].objectHash( path2 ) )
 			self.assertEqual( g1["out"].attributesHash( path1 ), g2["out"].attributesHash( path2 ) )
-			if path1 is not "/" :
+			if path1 != "/" :
 				self.assertEqual( g1["out"].childNamesHash( path1 ), g2["out"].childNamesHash( path2 ) )
 			else :
 				self.assertNotEqual( g1["out"].childNamesHash( path1 ), g2["out"].childNamesHash( path2 ) )
@@ -535,15 +537,6 @@ class GroupTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertTrue( s["g2"]["in"][0].getInput().isSame( b["out"] ) )
 		self.assertTrue( b["out"].getInput().isSame( b["g1"]["out"] ) )
-
-		# this test was causing crashes elsewhere when the script
-		# was finally garbage collected, so we force the collection
-		# here so we can be sure the problem is fixed.
-		del s
-		del b
-		while gc.collect() :
-			pass
-		IECore.RefCounted.collectGarbage()
 
 	def testSetsWithRenaming( self ) :
 
@@ -753,11 +746,8 @@ class GroupTest( GafferSceneTest.SceneTestCase ) :
 
 		g["in"][0].setInput( p["out"] )
 
-		noduleColor = Gaffer.Metadata.value( p, "nodule:color", instanceOnly = True )
-		connectionColor = Gaffer.Metadata.value( p, "connectionGadget:color", instanceOnly = True )
-
-		self.assertEqual( noduleColor, None )
-		self.assertEqual( noduleColor, connectionColor )
+		self.assertIsNone( Gaffer.Metadata.value( p, "nodule:color", Gaffer.Metadata.RegistrationTypes.Instance ) )
+		self.assertIsNone( Gaffer.Metadata.value( p, "connectionGadget:color", Gaffer.Metadata.RegistrationTypes.Instance ) )
 
 	def testProcessInvalidSet( self ) :
 
@@ -792,6 +782,62 @@ class GroupTest( GafferSceneTest.SceneTestCase ) :
 		self.assertFalse( group["out"].exists( "/group2" ) )
 		self.assertFalse( group["out"].exists( "/group/plane" ) )
 		self.assertFalse( group["out"].exists( "/road/to/nowhere" ) )
+
+	def testInvalidNames( self ) :
+
+		plane = GafferScene.Plane()
+		plane["sets"].setValue( "A" )
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( plane["out"] )
+
+		for name in [ "a/b", "a/", "/b", "/", "..", "..." ] :
+			with self.subTest( name = name ) :
+				group["name"].setValue( name )
+				with self.assertRaises( Gaffer.ProcessException ) :
+					group["out"].childNames( "/" )
+				with self.assertRaises( Gaffer.ProcessException ) :
+					group["out"].set( "A" )
+
+	def testGroupSets( self ) :
+
+		plane = GafferScene.Plane()
+		plane["sets"].setValue( "A" )
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( plane["out"] )
+
+		self.assertEqual(
+			group["out"].setNames(), plane["out"].setNames()
+		)
+
+		group["sets"].setValue( "B" )
+		self.assertEqual(
+			group["out"].setNames(), IECore.InternedStringVectorData( [ "A", "B" ] )
+		)
+
+		self.assertEqual( group["out"].set( "A" ).value, IECore.PathMatcher( [ "/group/plane" ] ) )
+		self.assertEqual( group["out"].set( "B" ).value, IECore.PathMatcher( [ "/group" ] ) )
+
+		group["name"].setValue( "world" )
+		self.assertEqual( group["out"].set( "A" ).value, IECore.PathMatcher( [ "/world/plane" ] ) )
+		self.assertEqual( group["out"].set( "B" ).value, IECore.PathMatcher( [ "/world" ] ) )
+
+		group["sets"].setValue( "A" )
+		self.assertEqual(
+			group["out"].setNames(), IECore.InternedStringVectorData( [ "A" ] )
+		)
+		self.assertEqual( group["out"].set( "A" ).value, IECore.PathMatcher( [ "/world/plane", "/world" ] ) )
+		self.assertEqual( group["out"].set( "B" ).value, IECore.PathMatcher() )
+
+		group["sets"].setValue( "B C" )
+		self.assertEqual(
+			group["out"].setNames(), IECore.InternedStringVectorData( [ "A", "B", "C" ] )
+		)
+		self.assertEqual( group["out"].set( "A" ).value, IECore.PathMatcher( [ "/world/plane" ] ) )
+		self.assertEqual( group["out"].set( "B" ).value, IECore.PathMatcher( [ "/world" ] ) )
+		self.assertEqual( group["out"].set( "C" ).value, IECore.PathMatcher( [ "/world" ] ) )
+		self.assertEqual( group["out"].set( "D" ).value, IECore.PathMatcher() )
 
 	def setUp( self ) :
 

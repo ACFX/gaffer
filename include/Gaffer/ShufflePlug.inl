@@ -34,11 +34,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFER_SHUFFLEPLUG_INL
-#define GAFFER_SHUFFLEPLUG_INL
+#pragma once
 
 #include "Gaffer/Node.h"
 #include "Gaffer/PlugAlgo.h"
+
+#include "fmt/format.h"
 
 #include <unordered_set>
 
@@ -46,17 +47,11 @@
 // Utility methods need by ShufflesPlug::shuffle()
 //////////////////////////////////////////////////////////////////////////
 
+
 namespace
 {
 
 const IECore::InternedString g_sourceVariable( "source" );
-
-struct ShuffleValues
-{
-	bool enabled;
-	bool deleteSource;
-	std::string sourcePattern;
-};
 
 } // namespace
 
@@ -64,67 +59,159 @@ namespace Gaffer
 {
 
 template<typename T>
-T ShufflesPlug::shuffle( const T &sourceContainer ) const
+T ShufflesPlug::shuffle( const T &sourceContainer, bool ignoreMissingSource ) const
 {
-	T destinationContainer;
+	return shuffleInternal( sourceContainer, static_cast<const T *>( nullptr ), ignoreMissingSource );
+}
 
-	size_t i = 0;
-	std::vector<::ShuffleValues> shuffleValues( this->children().size() );	
+template<typename T>
+T ShufflesPlug::shuffleWithExtraSources( const T &sourceContainer, const T &extraSources, bool ignoreMissingSource ) const
+{
+	return shuffleInternal( sourceContainer, &extraSources, ignoreMissingSource );
+}
+
+template<typename T>
+T ShufflesPlug::shuffleInternal( const T &sourceContainer, const T *extraSources, bool ignoreMissingSource ) const
+{
+	using NameContainer = std::unordered_set< typename T::key_type >;
+
+	// NOTE : The shuffles are applied in the same order they were added to the parent plug.
+	//        Each shuffle's source may contain wildcards, so a single shuffle may read from
+	//        multiple source names and write to multiple destination names, therefore each
+	//        shuffle specifies a set of data "moves". As each shuffle's set of moves is
+	//        unordered, moves with the same destination name eg. {a->c, b->c} are invalid.
+	//        Cyclic moves eg. {a->b, b->a} and chained moves eg. {a->b, b->c} are valid as
+	//        data is always copied from the source container. If the delete source flag is
+	//        specified for a shuffle the source names are deleted after all shuffles have
+	//        completed. If the replace destination flag is false for a shuffle each move will
+	//        not replace data with the same name as its destination.
+
+	T destinationContainer( sourceContainer ); // NOTE : initial copy of all source data to destination.
+
+	NameContainer names;
+
 	for( auto &plug : ShufflePlug::Range( *this ) )
 	{
-		shuffleValues[i].enabled = plug->enabledPlug()->getValue();
-		shuffleValues[i].deleteSource = plug->deleteSourcePlug()->getValue();
-		shuffleValues[i].sourcePattern = plug->sourcePlug()->getValue();		
-		++i;
-	}
+		// NOTE : "source" context variable only applies to the destination plug.
+		//        So retrieve values of other plugs before setting context variable.
 
-	std::unordered_set<std::string> toDelete;
-	std::unordered_set<std::string> newDestinations;
+		if( ! plug->enabledPlug()->getValue() )
+			continue;
 
-	Gaffer::Context::EditableScope scope( Gaffer::Context::current() );
+		const std::string &srcPattern = plug->sourcePlug()->getValue();
+		if( srcPattern.empty() )
+			continue;
 
-	for( const auto &sourceData : sourceContainer )
-	{
-		scope.set<std::string>( g_sourceVariable, sourceData.first );
+		const bool srcDelete = plug->deleteSourcePlug()->getValue();
+		const bool dstReplace = plug->replaceDestinationPlug()->getValue();
 
-		i = 0;
-		bool deleteSource = false;
+		// NOTE : Check if the source plug value contains wildcards. The destination
+		//        plug value cannot contain wildcards but may contain substitutions.
+		//        Any source substitutons should have already been done when evaluating
+		//        the source plug. We need to do destination substitutions manually.
 
-		for( auto &plug : ShufflePlug::Range( *this ) )
+		if( ! IECore::StringAlgo::hasWildcards( srcPattern ) )
 		{
-			auto &shuffle = shuffleValues[i++];
-			if( shuffle.enabled && !shuffle.sourcePattern.empty() )
-			{
-				// note we've disabled substitutions on the destination plug, so we're performing
-				// both the $source substitution and any other context substitutions here.
-				const std::string destination = scope.context()->substitute( plug->destinationPlug()->getValue() );
-				if( !destination.empty() && IECore::StringAlgo::match( sourceData.first, shuffle.sourcePattern ) )
-				{
-					destinationContainer[destination] = sourceData.second;
-					if( !newDestinations.insert( destination ).second )
-					{
-						throw IECore::Exception(
-							boost::str(
-								boost::format(
-									"ShufflesPlug::shuffle : Destination plug \"%s\" is shuffling \"%s\" to \"%s\", " \
-									"but this destination was already written by a previous Shuffle."
-								) %
-								plug->destinationPlug()->relativeName( plug->node() ? plug->node()->parent() : nullptr ) %
-								sourceData.first %
-								destination
-							)
-						);
-					}
+			// NOTE : No wildcards in source so shuffle is one move.
 
-					deleteSource |= shuffle.deleteSource;
+			const std::string &srcName = srcPattern;
+			const typename T::mapped_type *srcValue = nullptr;
+			typename T::const_iterator sIt = sourceContainer.find( srcName );
+
+			if( sIt != sourceContainer.end() )
+			{
+				srcValue = &sIt->second;
+			}
+			else if( extraSources )
+			{
+				sIt = extraSources->find( srcName );
+				if( sIt == extraSources->end() )
+				{
+					sIt = extraSources->find( "*" );
+				}
+				if( sIt != extraSources->end() )
+				{
+					srcValue = &sIt->second;
 				}
 			}
 
-		}
+			if( srcValue )
+			{
+				Gaffer::Context::EditableScope scope( Gaffer::Context::current() );
+				scope.set<std::string>( g_sourceVariable, &srcName );
+				const std::string &dstPattern = plug->destinationPlug()->getValue();
+				if( ! dstPattern.empty() )
+				{
+					const std::string dstName = scope.context()->substitute( dstPattern );
+					if( dstReplace || ( destinationContainer.find( dstName ) == destinationContainer.end() ) )
+					{
+						destinationContainer[ dstName ] = *srcValue;
+						names.insert( dstName );
+					}
 
-		if( !deleteSource && newDestinations.find( sourceData.first ) == newDestinations.end() )
+					if( srcDelete && ( names.find( srcName ) == names.end() ) )
+					{
+						destinationContainer.erase( srcName );
+					}
+				}
+			}
+			else if( !ignoreMissingSource )
+			{
+				throw IECore::Exception( fmt::format( "Source \"{}\" does not exist", srcName ) );
+			}
+		}
+		else
 		{
-			destinationContainer[sourceData.first] = sourceData.second;
+			// NOTE : The source contains wildcards so shuffle may be composed of
+			//        multiple moves. Match source pattern against each source name
+			//        and do destination substitutions.
+
+			Gaffer::Context::EditableScope scope( Gaffer::Context::current() );
+
+			NameContainer moveNames;
+			for( typename T::const_iterator
+					sIt    = sourceContainer.begin(),
+					sItEnd = sourceContainer.end(); sIt != sItEnd; ++sIt )
+			{
+				// NOTE : Quick way to get a string from a key that could be std::string or IECore::InternedString
+
+				const std::string &srcName = sIt->first;
+				if( IECore::StringAlgo::match( srcName, srcPattern ) )
+				{
+					scope.set<std::string>( g_sourceVariable, &srcName );
+					const std::string &dstPattern = plug->destinationPlug()->getValue();
+					if( ! dstPattern.empty() )
+					{
+						const std::string dstName = scope.context()->substitute( dstPattern );
+						// NOTE : Check for clashing move destination names within this shuffle.
+						//        Do check regardless of whether shuffle's replace destination
+						//        flag means destination is not actually written.
+
+						if( ! moveNames.insert( dstName ).second )
+						{
+							throw IECore::Exception(
+								fmt::format(
+									"ShufflesPlug::shuffle : Destination plug \"{}\" shuffles from \"{}\" to \"{}\", " \
+									"cannot write from multiple sources to destination \"{}\"",
+									plug->destinationPlug()->relativeName( plug->node() ? plug->node()->parent() : nullptr ),
+									srcPattern, dstPattern, dstName
+								)
+							);
+						}
+
+						if( dstReplace || ( destinationContainer.find( dstName ) == destinationContainer.end() ) )
+						{
+							destinationContainer[ dstName ] = sIt->second;
+							names.insert( dstName );
+						}
+
+						if( srcDelete && ( names.find( srcName ) == names.end() ) )
+						{
+							destinationContainer.erase( srcName );
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -132,5 +219,3 @@ T ShufflesPlug::shuffle( const T &sourceContainer ) const
 }
 
 } // namespace Gaffer
-
-#endif // GAFFER_SHUFFLEPLUG_INL

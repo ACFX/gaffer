@@ -124,12 +124,13 @@ void SphereLevelSet::affects( const Plug *input, AffectedPlugsContainer &outputs
 {
 	ObjectSource::affects( input, outputs );
 
-	if( input == gridPlug() ||
+	if(
+		input == gridPlug() ||
 		input == radiusPlug() ||
 		input->parent() == centerPlug() ||
 		input == voxelSizePlug() ||
 		input == halfWidthPlug()
-	   )
+	)
 	{
 		outputs.push_back( sourcePlug() );
 	}
@@ -170,3 +171,11 @@ IECore::ConstObjectPtr SphereLevelSet::computeSource( const Context *context ) c
 
 }
 
+Gaffer::ValuePlug::CachePolicy SphereLevelSet::computeCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == sourcePlug() )
+	{
+		return ValuePlug::CachePolicy::TaskCollaboration;
+	}
+	return ObjectSource::computeCachePolicy( output );
+}

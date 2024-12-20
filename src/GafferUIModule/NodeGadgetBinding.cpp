@@ -66,17 +66,16 @@ namespace
 
 struct NoduleSlotCaller
 {
-	boost::signals::detail::unusable operator()( boost::python::object slot, NodeGadget *nodeGadget, Nodule *nodule )
+	void operator()( boost::python::object slot, NodeGadget *nodeGadget, Nodule *nodule )
 	{
 		try
 		{
 			slot( NodeGadgetPtr( nodeGadget ), NodulePtr( nodule ) );
 		}
-		catch( const error_already_set &e )
+		catch( const error_already_set & )
 		{
 			ExceptionAlgo::translatePythonException();
 		}
-		return boost::signals::detail::unusable();
 	}
 };
 
@@ -171,7 +170,7 @@ list framed( BackdropNodeGadget &b )
 
 void GafferUIModule::bindNodeGadget()
 {
-	typedef NodeGadgetWrapper<NodeGadget> Wrapper;
+	using Wrapper = NodeGadgetWrapper<NodeGadget>;
 
 	NodeGadgetClass<NodeGadget, Wrapper>()
 		.def( "node", (Gaffer::Node *(NodeGadget::*)())&NodeGadget::node, return_value_policy<CastToIntrusivePtr>() )

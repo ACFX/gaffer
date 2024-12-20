@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_MERGE_H
-#define GAFFERIMAGE_MERGE_H
+#pragma once
 
 #include "GafferImage/FlatImageProcessor.h"
 
@@ -61,10 +60,10 @@ class GAFFERIMAGE_API Merge : public FlatImageProcessor
 
 	public :
 
-		Merge( const std::string &name=defaultName<Merge>() );
+		explicit Merge( const std::string &name=defaultName<Merge>() );
 		~Merge() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Merge, MergeTypeId, FlatImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Merge, MergeTypeId, FlatImageProcessor );
 
 		enum Operation
 		{
@@ -105,10 +104,6 @@ class GAFFERIMAGE_API Merge : public FlatImageProcessor
 
 	private :
 
-		// Performs the merge operation using the functor 'F'.
-		template<typename F>
-		IECore::ConstFloatVectorDataPtr merge( F f, const std::string &channelName, const Imath::V2i &tileOrigin ) const;
-
 		static size_t g_firstPlugIndex;
 
 };
@@ -116,5 +111,3 @@ class GAFFERIMAGE_API Merge : public FlatImageProcessor
 IE_CORE_DECLAREPTR( Merge )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_MERGE_H

@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_DEEPSTATE_H
-#define GAFFERIMAGE_DEEPSTATE_H
+#pragma once
 
 #include "Gaffer/NumericPlug.h"
 
@@ -57,10 +56,10 @@ class GAFFERIMAGE_API DeepState : public ImageProcessor
 		};
 
 
-		DeepState( const std::string &name=defaultName<DeepState>() );
+		explicit DeepState( const std::string &name=defaultName<DeepState>() );
 		~DeepState() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::DeepState, DeepStateTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::DeepState, DeepStateTypeId, ImageProcessor );
 
 		Gaffer::IntPlug *deepStatePlug();
 		const Gaffer::IntPlug *deepStatePlug() const;
@@ -101,5 +100,3 @@ class GAFFERIMAGE_API DeepState : public ImageProcessor
 IE_CORE_DECLAREPTR( DeepState )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_DEEPSTATE_H

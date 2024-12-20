@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_SCENENODE_H
-#define GAFFERSCENE_SCENENODE_H
+#pragma once
 
 #include "GafferScene/Export.h"
 #include "GafferScene/ScenePlug.h"
@@ -53,10 +52,10 @@ class GAFFERSCENE_API SceneNode : public Gaffer::ComputeNode
 
 	public :
 
-		SceneNode( const std::string &name=defaultName<SceneNode>() );
+		explicit SceneNode( const std::string &name=defaultName<SceneNode>() );
 		~SceneNode() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::SceneNode, SceneNodeTypeId, Gaffer::ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::SceneNode, SceneNodeTypeId, Gaffer::ComputeNode );
 
 		/// All SceneNodes have at least one output ScenePlug for passing on their result. More
 		/// may be added by derived classes if necessary.
@@ -72,7 +71,7 @@ class GAFFERSCENE_API SceneNode : public Gaffer::ComputeNode
 
 	protected :
 
-		typedef ScenePlug::ScenePath ScenePath;
+		using ScenePath = ScenePlug::ScenePath;
 
 		/// Implemented to call the hash*() methods below whenever output is part of a ScenePlug and the node is enabled.
 		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
@@ -127,6 +126,11 @@ class GAFFERSCENE_API SceneNode : public Gaffer::ComputeNode
 		Gaffer::ValuePlug::CachePolicy hashCachePolicy( const Gaffer::ValuePlug *output ) const override;
 		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
 
+		/// Returns `enabledPlug()->getValue()` evaluated in a global context.
+		/// Disabling is handled automatically by the SceneNode and SceneProcessor
+		/// base classes, so there should be little need to call this.
+		bool enabled( const Gaffer::Context *context ) const;
+
 	private :
 
 		void plugInputChanged( Gaffer::Plug *plug );
@@ -147,5 +151,3 @@ class GAFFERSCENE_API SceneNode : public Gaffer::ComputeNode
 IE_CORE_DECLAREPTR( SceneNode )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_SCENENODE_H

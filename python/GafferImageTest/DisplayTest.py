@@ -38,7 +38,7 @@ import os
 import unittest
 import random
 import threading
-import subprocess32 as subprocess
+import subprocess
 import imath
 
 import IECore
@@ -105,7 +105,11 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 				h.assertCalled()
 				h.assertDone()
 
-		def close( self ) :
+		def close( self, withCallHandler = True ) :
+
+			if not withCallHandler :
+				self.__driver.imageClose()
+				return
 
 			with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as h :
 				self.__driver.imageClose()
@@ -164,7 +168,7 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 
 		node = GafferImage.Display()
 		server = IECoreImage.DisplayDriverServer()
-		driverCreatedConnection = GafferImage.Display.driverCreatedSignal().connect( lambda driver, parameters : node.setDriver( driver ) )
+		driverCreatedConnection = GafferImage.Display.driverCreatedSignal().connect( lambda driver, parameters : node.setDriver( driver ), scoped = True )
 
 		dataWindow = imath.Box2i( imath.V2i( -100, -200 ), imath.V2i( 303, 557 ) )
 		driver = self.Driver(
@@ -204,15 +208,15 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 
 	def testTransferChecker( self ) :
 
-		self.__testTransferImage( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
+		self.__testTransferImage( self.imagesPath() / "checker.exr" )
 
 	def testTransferWithDataWindow( self ) :
 
-		self.__testTransferImage( "$GAFFER_ROOT/python/GafferImageTest/images/checkerWithNegativeDataWindow.200x150.exr" )
+		self.__testTransferImage( self.imagesPath() / "checkerWithNegativeDataWindow.200x150.exr" )
 
 	def testAccessOutsideDataWindow( self ) :
 
-		node = self.__testTransferImage( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
+		node = self.__testTransferImage( self.imagesPath() / "checker.exr" )
 
 		blackTile = IECore.FloatVectorData( [ 0 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
 
@@ -235,11 +239,11 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 		s["p"] = GafferDispatch.PythonCommand()
 		s["p"]["command"].setValue( "pass" )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		output = subprocess.check_output(
-			[ "gaffer", "execute", self.temporaryDirectory() + "test.gfr", "-nodes", "p" ],
+			[ str( Gaffer.executablePath() ), "execute", str( self.temporaryDirectory() / "test.gfr" ), "-nodes", "p" ],
 			stderr = subprocess.STDOUT, universal_newlines = True
 		)
 		self.assertEqual( output, "" )
@@ -249,7 +253,7 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 		driversCreated = GafferTest.CapturingSlot( GafferImage.Display.driverCreatedSignal() )
 
 		server = IECoreImage.DisplayDriverServer()
-		dataWindow = imath.Box2i( imath.V2i( 0 ), imath.V2i( 100 ) )
+		dataWindow = imath.Box2i( imath.V2i( 0 ), imath.V2i( GafferImage.ImagePlug.tileSize() ) )
 
 		driver = self.Driver(
 			GafferImage.Format( dataWindow ),
@@ -258,65 +262,87 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 			port = server.portNumber()
 		)
 
-		self.assertTrue( len( driversCreated ), 1 )
+		try:
 
-		display = GafferImage.Display()
-		self.assertTrue( display.getDriver() is None )
+			self.assertTrue( len( driversCreated ), 1 )
 
-		dirtiedPlugs = GafferTest.CapturingSlot( display.plugDirtiedSignal() )
+			display = GafferImage.Display()
+			self.assertIsNone( display.getDriver() )
+			self.assertFalse( display.driverClosed() )
 
-		display.setDriver( driversCreated[0][0] )
-		self.assertTrue( display.getDriver().isSame( driversCreated[0][0] ) )
+			dirtiedPlugs = GafferTest.CapturingSlot( display.plugDirtiedSignal() )
 
-		# Ensure all the output plugs have been dirtied
-		expectedDirty = { "__driverCount", "out" }.union( { c.getName() for c in display["out"].children() } )
-		self.assertEqual( expectedDirty, set( e[0].getName() for e in dirtiedPlugs ) )
+			display.setDriver( driversCreated[0][0] )
+			self.assertTrue( display.getDriver().isSame( driversCreated[0][0] ) )
+			self.assertFalse( display.driverClosed() )
 
-		del dirtiedPlugs[:]
+			# Ensure all the output plugs have been dirtied
+			expectedDirty = { "__driverCount", "__channelDataCount", "out" }.union( { c.getName() for c in display["out"].children() } )
+			self.assertEqual( expectedDirty, set( e[0].getName() for e in dirtiedPlugs ) )
 
-		driver.sendBucket( dataWindow, [ IECore.FloatVectorData( [ 0.5 ] * dataWindow.size().x * dataWindow.size().y ) ] )
+			del dirtiedPlugs[:]
 
-		self.assertEqual( display["out"]["format"].getValue().getDisplayWindow(), dataWindow )
-		self.assertEqual( display["out"]["dataWindow"].getValue(), dataWindow )
-		self.assertEqual( display["out"]["channelNames"].getValue(), IECore.StringVectorData( [ "Y" ] ) )
-		self.assertEqual(
-			display["out"].channelData( "Y", imath.V2i( 0 ) ),
-			IECore.FloatVectorData( [ 0.5 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
-		)
+			driver.sendBucket( dataWindow, [ IECore.FloatVectorData( [ 0.5 ] * dataWindow.size().x * dataWindow.size().y ) ] )
 
-		# Ensure only channel data has been dirtied
-		expectedDirty = { "channelData", "__channelDataCount", "out" }
-		self.assertEqual( set( e[0].getName() for e in dirtiedPlugs ), expectedDirty )
+			self.assertEqual( display["out"]["format"].getValue().getDisplayWindow(), dataWindow )
+			self.assertEqual( display["out"]["dataWindow"].getValue(), dataWindow )
+			self.assertEqual( display["out"]["channelNames"].getValue(), IECore.StringVectorData( [ "Y" ] ) )
+			self.assertEqual(
+				display["out"].channelData( "Y", imath.V2i( 0 ) ),
+				IECore.FloatVectorData( [ 0.5 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
+			)
+			self.assertFalse( display.driverClosed() )
 
-		display2 = GafferImage.Display()
-		display2.setDriver( display.getDriver(), copy = True )
+			# Ensure only channel data has been dirtied
+			expectedDirty = { "channelData", "__channelDataCount", "out" }
+			self.assertEqual( set( e[0].getName() for e in dirtiedPlugs ), expectedDirty )
 
-		self.assertImagesEqual( display["out"], display2["out"] )
+			display2 = GafferImage.Display()
+			self.assertFalse( display2.driverClosed() )
+			display2.setDriver( display.getDriver(), copy = True )
+			self.assertTrue( display2.driverClosed() )
 
-		driver.sendBucket( dataWindow, [ IECore.FloatVectorData( [ 1 ] * dataWindow.size().x * dataWindow.size().y ) ] )
+			self.assertImagesEqual( display["out"], display2["out"] )
 
-		self.assertEqual(
-			display["out"].channelData( "Y", imath.V2i( 0 ) ),
-			IECore.FloatVectorData( [ 1 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
-		)
+			driver.sendBucket( dataWindow, [ IECore.FloatVectorData( [ 1 ] * dataWindow.size().x * dataWindow.size().y ) ] )
 
-		self.assertEqual(
-			display2["out"].channelData( "Y", imath.V2i( 0 ) ),
-			IECore.FloatVectorData( [ 0.5 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
-		)
+			self.assertEqual(
+				display["out"].channelData( "Y", imath.V2i( 0 ) ),
+				IECore.FloatVectorData( [ 1 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
+			)
 
-		driver.close()
+			self.assertEqual(
+				display2["out"].channelData( "Y", imath.V2i( 0 ) ),
+				IECore.FloatVectorData( [ 0.5 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
+			)
+		finally:
+			driver.close()
+			self.assertTrue( display.driverClosed() )
+
+	def testSignalShutdownCrash( self ) :
+
+		subprocess.check_call( [
+			Gaffer.executablePath(), "env", "python", "-c",
+			"""import GafferImage; GafferImage.Display.driverCreatedSignal().connect( lambda d, p : None )"""
+		] )
+
+		subprocess.check_call( [
+			Gaffer.executablePath(), "env", "python", "-c",
+			"""import GafferImage; GafferImage.Display.imageReceivedSignal().connect( lambda p : None )"""
+		] )
 
 	def __testTransferImage( self, fileName ) :
 
 		imageReader = GafferImage.ImageReader()
-		imageReader["fileName"].setValue( os.path.expandvars( fileName ) )
+		imageReader["fileName"].setValue( fileName )
 
 		imagesReceived = GafferTest.CapturingSlot( GafferImage.Display.imageReceivedSignal() )
 
 		node = GafferImage.Display()
+		self.assertFalse( node.driverClosed() )
+
 		server = IECoreImage.DisplayDriverServer()
-		driverCreatedConnection = GafferImage.Display.driverCreatedSignal().connect( lambda driver, parameters : node.setDriver( driver ) )
+		driverCreatedConnection = GafferImage.Display.driverCreatedSignal().connect( lambda driver, parameters : node.setDriver( driver ), scoped = True )
 
 		self.assertEqual( len( imagesReceived ), 0 )
 
@@ -326,6 +352,7 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 
 		self.assertEqual( len( imagesReceived ), 1 )
 		self.assertEqual( imagesReceived[0][0], node["out"] )
+		self.assertTrue( node.driverClosed() )
 
 		return node
 

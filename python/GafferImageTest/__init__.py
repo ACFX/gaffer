@@ -35,6 +35,8 @@
 #
 ##########################################################################
 
+__import__( "Gaffer" )
+
 from ._GafferImageTest import *
 
 from .ImageTestCase import ImageTestCase
@@ -81,7 +83,6 @@ from .FormatPlugTest import FormatPlugTest
 from .OffsetTest import OffsetTest
 from .BlurTest import BlurTest
 from .TextTest import TextTest
-from .OpenColorIOTransformTest import OpenColorIOTransformTest
 from .VectorWarpTest import VectorWarpTest
 from .MirrorTest import MirrorTest
 from .CopyChannelsTest import CopyChannelsTest
@@ -102,6 +103,21 @@ from .DeepStateTest import DeepStateTest
 from .EmptyTest import EmptyTest
 from .DeepHoldoutTest import DeepHoldoutTest
 from .DeepRecolorTest import DeepRecolorTest
+from .ContextSanitiserTest import ContextSanitiserTest
+from .SaturationTest import SaturationTest
+from .FormatQueryTest import FormatQueryTest
+from .CreateViewsTest import CreateViewsTest
+from .SelectViewTest import SelectViewTest
+from .DeleteViewsTest import DeleteViewsTest
+from .CopyViewsTest import CopyViewsTest
+from .AnaglyphTest import AnaglyphTest
+from .LookTransformTest import LookTransformTest
+from .OpenColorIOAlgoTest import OpenColorIOAlgoTest
+from .OpenColorIOContextTest import OpenColorIOContextTest
+from .OpenColorIOConfigPlugTest import OpenColorIOConfigPlugTest
+from .DeepSliceTest import DeepSliceTest
+from .ContactSheetCoreTest import ContactSheetCoreTest
+from .ContactSheetTest import ContactSheetTest
 
 if __name__ == "__main__":
 	import unittest

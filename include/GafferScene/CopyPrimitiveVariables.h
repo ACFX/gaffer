@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_COPYPRIMITIVEVARIABLES_H
-#define GAFFERSCENE_COPYPRIMITIVEVARIABLES_H
+#pragma once
 
 #include "GafferScene/Deformer.h"
 
@@ -49,10 +48,10 @@ class GAFFERSCENE_API CopyPrimitiveVariables : public Deformer
 
 	public :
 
-		CopyPrimitiveVariables( const std::string &name=defaultName<CopyPrimitiveVariables>() );
+		explicit CopyPrimitiveVariables( const std::string &name=defaultName<CopyPrimitiveVariables>() );
 		~CopyPrimitiveVariables() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CopyPrimitiveVariables, CopyPrimitiveVariablesTypeId, Deformer );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::CopyPrimitiveVariables, CopyPrimitiveVariablesTypeId, Deformer );
 
 		GafferScene::ScenePlug *sourcePlug();
 		const GafferScene::ScenePlug *sourcePlug() const;
@@ -62,6 +61,12 @@ class GAFFERSCENE_API CopyPrimitiveVariables : public Deformer
 
 		Gaffer::StringPlug *sourceLocationPlug();
 		const Gaffer::StringPlug *sourceLocationPlug() const;
+
+		Gaffer::StringPlug *prefixPlug();
+		const Gaffer::StringPlug *prefixPlug() const;
+
+		Gaffer::BoolPlug *ignoreIncompatiblePlug();
+		const Gaffer::BoolPlug *ignoreIncompatiblePlug() const;
 
 	protected :
 
@@ -79,5 +84,3 @@ class GAFFERSCENE_API CopyPrimitiveVariables : public Deformer
 IE_CORE_DECLAREPTR( CopyPrimitiveVariables )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_COPYPRIMITIVEVARIABLES_H

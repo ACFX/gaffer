@@ -40,6 +40,8 @@
 #include "GafferScene/Private/IECoreGLPreview/LightVisualiser.h"
 #include "GafferScene/Private/IECoreGLPreview/LightFilterVisualiser.h"
 #include "GafferScene/Private/IECoreGLPreview/ObjectVisualiser.h"
+#include "GafferScene/Private/IECoreScenePreview/Placeholder.h"
+#include "GafferScene/ScenePlug.h"
 
 #include "IECoreGL/CachedConverter.h"
 #include "IECoreGL/Camera.h"
@@ -66,13 +68,14 @@
 #include "IECore/StringAlgo.h"
 #include "IECore/Writer.h"
 
-#include "OpenEXR/ImathBoxAlgo.h"
-#include "OpenEXR/ImathMatrixAlgo.h"
+#include "Imath/ImathBoxAlgo.h"
+#include "Imath/ImathMatrixAlgo.h"
 
 #include "boost/algorithm/string/predicate.hpp"
-#include "boost/format.hpp"
 
 #include "tbb/concurrent_queue.h"
+
+#include "fmt/format.h"
 
 #include <functional>
 #include <unordered_map>
@@ -117,13 +120,13 @@ class ScopedTransform
 };
 
 template <class... Vs>
-bool haveMatchingVisualisations( Visualisation::Scale scale, Visualisation::Category category, const Vs & ... visualisations )
+bool haveMatchingVisualisations( Visualisation::ColorSpace colorSpace, Visualisation::Scale scale, Visualisation::Category category, const Vs & ... visualisations )
 {
 	for( auto vs : { visualisations... } )
 	{
 		for( auto v : vs )
 		{
-			if( v.scale == scale && v.category & category )
+			if( v.colorSpace == colorSpace && v.scale == scale && v.category & category )
 			{
 				return true;
 			}
@@ -133,15 +136,15 @@ bool haveMatchingVisualisations( Visualisation::Scale scale, Visualisation::Cate
 }
 
 template <class... Vs>
-void renderMatchingVisualisations( Visualisation::Scale scale, Visualisation::Category category, IECoreGL::State *state, const Vs & ... visualisations )
+void renderMatchingVisualisations( Visualisation::ColorSpace colorSpace, Visualisation::Scale scale, Visualisation::Category category, IECoreGL::State *state, const Vs & ... visualisations )
 {
 	for( auto vs : { visualisations... } )
 	{
 		for( auto v : vs )
 		{
-			if( v.scale == scale && v.category & category )
+			if( v.colorSpace == colorSpace && v.scale == scale && v.category & category )
 			{
-				v.renderable()->render( state );
+				v.renderable->render( state );
 			}
 		}
 	}
@@ -159,7 +162,7 @@ void accumulateVisualisationBounds( Box3f &target, Visualisation::Scale scale, V
 				continue;
 			}
 
-			const Box3f b = v.renderable()->bound();
+			const Box3f b = v.renderable->bound();
 			if( !b.isEmpty() )
 			{
 				target.extendBy( Imath::transform( b, transform ) );
@@ -177,8 +180,22 @@ T *reportedCast( const IECore::RunTimeTyped *v, const char *type, const IECore::
 		return t;
 	}
 
-	IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer", boost::format( "Expected %s but got %s for %s \"%s\"." ) % T::staticTypeName() % v->typeName() % type % name.c_str() );
+	IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer", fmt::format( "Expected {} but got {} for {} \"{}\".", T::staticTypeName(), v->typeName(), type, name.string() ) );
 	return nullptr;
+}
+
+template<typename T>
+T option( const IECore::Object *v, const IECore::InternedString &name, const T &defaultValue )
+{
+	if( !v )
+	{
+		return defaultValue;
+	}
+	if( auto d = reportedCast<const IECore::TypedData<T>>( v, "option", name ) )
+	{
+		return d->readable();
+	}
+	return defaultValue;
 }
 
 template<typename T>
@@ -190,7 +207,7 @@ T parameter( const IECore::CompoundDataMap &parameters, const IECore::InternedSt
 		return defaultValue;
 	}
 
-	typedef IECore::TypedData<T> DataType;
+	using DataType = IECore::TypedData<T>;
 	if( const DataType *d = reportedCast<const DataType>( it->second.get(), "parameter", name ) )
 	{
 		return d->readable();
@@ -201,16 +218,85 @@ T parameter( const IECore::CompoundDataMap &parameters, const IECore::InternedSt
 	}
 }
 
-const IECoreGL::State &selectionState()
+const IECoreGL::State &selectedSceneState()
 {
 	static IECoreGL::StatePtr s;
 	if( !s )
 	{
 		s = new IECoreGL::State( false );
+		// Turn off wireframe when rendering `ColorSpace::Scene`, because we'll
+		// be using it for a selection overlay in `ColorSpace::Display`.
+		s->add( new IECoreGL::Primitive::DrawWireframe( false ), /* override = */ true );
+	}
+	return *s;
+}
+
+const IECoreGL::State &selectedCurvesSceneState()
+{
+	static IECoreGL::StatePtr s;
+	if( !s )
+	{
+		s = new IECoreGL::State( false );
+		// Turn off wireframe as for `selectedSceneState()`, but also turn off solid drawing
+		// because it also conflicts with the wireframe.
+		s->add( new IECoreGL::Primitive::DrawWireframe( false ), /* override = */ true );
+		s->add( new IECoreGL::Primitive::DrawSolid( false ), /* override = */ true );
+	}
+	return *s;
+}
+
+const IECoreGL::State &selectedPointsSceneState()
+{
+	static IECoreGL::StatePtr s;
+	if( !s )
+	{
+		s = new IECoreGL::State( false );
+		// See above.
+		s->add( new IECoreGL::Primitive::DrawWireframe( false ), /* override = */ true );
+		s->add( new IECoreGL::Primitive::DrawSolid( false ), /* override = */ true );
+		s->add( new IECoreGL::Primitive::DrawPoints( false ), /* override = */ true );
+	}
+	return *s;
+}
+
+const IECoreGL::State &selectedDisplayState()
+{
+	static IECoreGL::StatePtr s;
+	if( !s )
+	{
+		s = new IECoreGL::State( false );
+		s->add( new IECoreGL::Primitive::DrawPoints( false ), /* override = */ true );
+		s->add( new IECoreGL::Primitive::DrawSolid( false ), /* override = */ true );
 		s->add( new IECoreGL::Primitive::DrawWireframe( true ), /* override = */ true );
 		s->add( new IECoreGL::WireframeColorStateComponent( Color4f( 0.466f, 0.612f, 0.741f, 1.0f ) ), /* override = */ true );
 	}
 	return *s;
+}
+
+const IECoreGL::State &selectionState( const IECoreGL::Renderable *renderable, const IECoreGL::State *currentState, Visualisation::ColorSpace colorSpace )
+{
+	if( colorSpace == Visualisation::ColorSpace::Display )
+	{
+		return selectedDisplayState();
+	}
+
+	switch( (IECoreGL::TypeId)renderable->typeId() )
+	{
+		case IECoreGL::PointsPrimitiveTypeId :
+			if( static_cast<const IECoreGL::PointsPrimitive *>( renderable )->renderUsesGLPoints( currentState ) ) {
+				return selectedPointsSceneState();
+			} else {
+				return selectedSceneState();
+			}
+		case IECoreGL::CurvesPrimitiveTypeId :
+			if( static_cast<const IECoreGL::CurvesPrimitive *>( renderable )->renderUsesGLLines( currentState ) ) {
+				return selectedCurvesSceneState();
+			} else {
+				return selectedSceneState();
+			}
+		default :
+			return selectedSceneState();
+	}
 }
 
 } // namespace
@@ -228,7 +314,7 @@ class OpenGLAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 	public :
 
 		OpenGLAttributes( const IECore::CompoundObject *attributes )
-			: m_frustumMode( FrustumMode::WhenSelected )
+			:	m_frustumMode( FrustumMode::WhenSelected ), m_visualisationStateColorSpace( Visualisation::ColorSpace::Display )
 		{
 			const FloatData *visualiserScaleData = attributes->member<FloatData>( "gl:visualiser:scale" );
 			m_visualiserScale = visualiserScaleData ? visualiserScaleData->readable() : 1.0;
@@ -278,7 +364,7 @@ class OpenGLAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 
 			if( visualisationState || lightVisualisationState || lightFilterVisualisationState )
 			{
-				StatePtr combinedState = new State( *m_state );
+				StatePtr combinedState = new State( /* complete = */ false );
 
 				if( visualisationState )
 				{
@@ -295,13 +381,31 @@ class OpenGLAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 					combinedState->add( const_cast<State *>( lightFilterVisualisationState.get() ) );
 				}
 
-				m_state = combinedState;
+				m_visualisationState = combinedState;
+				auto solidState = m_visualisationState->get<IECoreGL::Primitive::DrawSolid>();
+				// The Visualiser API doesn't currently allow a colour space to
+				// be associated with the visualisation state. So we use a
+				// heuristic : if the state includes solid drawing then we
+				// assume Scene space. This allows custom mesh light texture
+				// visualisers to be shown with an appropriate colour transform.
+				// Otherwise we assume Display space, which gives us what we
+				// want for the coloured outline from our own mesh light
+				// visualiser.
+				if( !solidState || solidState->value() )
+				{
+					m_visualisationStateColorSpace = Visualisation::ColorSpace::Scene;
+				}
 			}
 		}
 
 		const State *state() const
 		{
 			return m_state.get();
+		}
+
+		const State *visualisationState( Visualisation::ColorSpace colorSpace ) const
+		{
+			return colorSpace == m_visualisationStateColorSpace ? m_visualisationState.get() : nullptr;
 		}
 
 		const IECoreGLPreview::Visualisations &visualisations() const
@@ -340,6 +444,7 @@ class OpenGLAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 	private :
 
 		ConstStatePtr m_state;
+		ConstStatePtr m_visualisationState;
 		Visualisations m_visualisations;
 		Visualisations m_lightVisualisations;
 		Visualisations m_lightFilterVisualisations;
@@ -353,6 +458,7 @@ class OpenGLAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 		FrustumMode m_frustumMode;
 
 		float m_visualiserScale = 1.0f;
+		Visualisation::ColorSpace m_visualisationStateColorSpace;
 };
 
 IE_CORE_DECLAREPTR( OpenGLAttributes )
@@ -366,8 +472,8 @@ IE_CORE_DECLAREPTR( OpenGLAttributes )
 namespace
 {
 
-typedef std::function<void ()> Edit;
-typedef tbb::concurrent_queue<Edit> EditQueue;
+using Edit = std::function<void ()>;
+using EditQueue = tbb::concurrent_queue<Edit>;
 
 class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 {
@@ -429,6 +535,16 @@ class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 		{
 		}
 
+		void assignID( uint32_t id ) override
+		{
+			// The GL renderer provides a more lightweight ID mechanism where
+			// IDs are just the index in the object list, and don't need
+			// assigning. This is exposed via the `gl:querySelection` command.
+			// So we don't implement `assignID()` for now.
+			/// \todo Evaluate overhead of the more general ID mechanism, and
+			/// consider dropping the custom OpenGL one.
+		}
+
 		Box3f transformedBound() const
 		{
 			Box3f b;
@@ -469,7 +585,7 @@ class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 			return selection.match( m_name ) & ( PathMatcher::AncestorMatch | PathMatcher::ExactMatch );
 		}
 
-		void render( IECoreGL::State *currentState, const IECore::PathMatcher &selection ) const
+		void render( IECoreGL::State *currentState, const IECore::PathMatcher &selection, Visualisation::ColorSpace colorSpace ) const
 		{
 			const Visualisations &attrVis = visualisations( *m_attributes );
 			const bool haveVisualisations = attrVis.size() > 0 || m_objectVisualisations.size() > 0;
@@ -481,16 +597,16 @@ class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 
 			const bool isSelected = selected( selection );
 
-			IECoreGL::State::ScopedBinding scope( *m_attributes->state(), *currentState );
-			IECoreGL::State::ScopedBinding selectionScope( selectionState(), *currentState, isSelected );
-
 			// In order to minimize z-fighting, we draw non-geometric visualisations
 			// first and real geometry last, so that they sit on top. This is
 			// still prone to flicker, but seems to provide the best results.
 
-
 			if( haveVisualisations )
 			{
+				IECoreGL::State::ScopedBinding selectionScope(
+					selectedDisplayState(), *currentState, isSelected && colorSpace == Visualisation::ColorSpace::Display
+				);
+
 				Visualisation::Category categories = Visualisation::Category::Generic;
 				if( m_attributes->drawFrustum( isSelected ) )
 				{
@@ -499,36 +615,49 @@ class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 
 				if( m_attributes->visualiserScale() > 0.0f )
 				{
-					if( haveMatchingVisualisations( Visualisation::Scale::Visualiser, categories, attrVis, m_objectVisualisations ) )
+					if( haveMatchingVisualisations( colorSpace, Visualisation::Scale::Visualiser, categories, attrVis, m_objectVisualisations ) )
 					{
 						ScopedTransform v( visualiserTransform( false ) );
-						renderMatchingVisualisations( Visualisation::Scale::Visualiser, categories, currentState, attrVis, m_objectVisualisations );
+						renderMatchingVisualisations( colorSpace, Visualisation::Scale::Visualiser, categories, currentState, attrVis, m_objectVisualisations );
 					}
 
-					if( haveMatchingVisualisations( Visualisation::Scale::LocalAndVisualiser, categories, attrVis, m_objectVisualisations ) )
+					if( haveMatchingVisualisations( colorSpace, Visualisation::Scale::LocalAndVisualiser, categories, attrVis, m_objectVisualisations ) )
 					{
 						ScopedTransform c( visualiserTransform( true ) );
-						renderMatchingVisualisations( Visualisation::Scale::LocalAndVisualiser, categories, currentState, attrVis, m_objectVisualisations );
+						renderMatchingVisualisations( colorSpace, Visualisation::Scale::LocalAndVisualiser, categories, currentState, attrVis, m_objectVisualisations );
 					}
 				}
 
-				if( haveMatchingVisualisations( Visualisation::Scale::None, categories, attrVis, m_objectVisualisations ) )
+				if( haveMatchingVisualisations( colorSpace, Visualisation::Scale::None, categories, attrVis, m_objectVisualisations ) )
 				{
 					ScopedTransform l( m_transformSansScale );
-					renderMatchingVisualisations( Visualisation::Scale::None, categories, currentState, attrVis, m_objectVisualisations );
+					renderMatchingVisualisations( colorSpace, Visualisation::Scale::None, categories, currentState, attrVis, m_objectVisualisations );
 				}
 
-				if( m_renderable || haveMatchingVisualisations( Visualisation::Scale::Local, categories, attrVis, m_objectVisualisations ) )
+				if( haveMatchingVisualisations( colorSpace, Visualisation::Scale::Local, categories, attrVis, m_objectVisualisations ) )
 				{
 					ScopedTransform l( m_transform );
-
-					renderMatchingVisualisations( Visualisation::Scale::Local, categories, currentState, attrVis, m_objectVisualisations );
-					if( m_renderable ) { m_renderable->render( currentState ); }
+					renderMatchingVisualisations( colorSpace, Visualisation::Scale::Local, categories, currentState, attrVis, m_objectVisualisations );
 				}
-
 			}
-			else if( m_renderable )
+
+			// Objects are rendered into `ColorSpace::Scene`, with the caveat that selection
+			// overlays and additional visualisations are drawn into `ColorSpace::Display`.
+
+			const IECoreGL::State *visualisationState = m_attributes->visualisationState( colorSpace );
+			if( m_renderable && ( colorSpace == Visualisation::ColorSpace::Scene || isSelected || visualisationState ) )
 			{
+				IECoreGL::State::ScopedBinding stateScope( *m_attributes->state(), *currentState );
+				std::optional<IECoreGL::State::ScopedBinding> visualisationStateScope;
+				if( visualisationState )
+				{
+					visualisationStateScope.emplace( *visualisationState, *currentState );
+				}
+				IECoreGL::State::ScopedBinding selectionScope(
+					selectionState( m_renderable. get(), currentState, colorSpace ),
+					*currentState, isSelected
+				);
+
 				ScopedTransform l( m_transform );
 				m_renderable->render( currentState );
 			}
@@ -628,7 +757,6 @@ class OpenGLCamera : public OpenGLObject
 	private :
 
 		IECoreGL::CameraPtr m_camera;
-		ConstOpenGLAttributesPtr m_attributes;
 		V2i m_resolution;
 
 };
@@ -700,7 +828,8 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 	public :
 
 		OpenGLRenderer( RenderType renderType, const std::string &fileName, const IECore::MessageHandlerPtr &messageHandler )
-			:	m_renderType( renderType ), m_baseStateOptions( new CompoundObject ), m_messageHandler( messageHandler )
+			:	m_renderType( renderType ), m_baseStateOptions( new CompoundObject ),
+				m_renderObjects( true ), m_messageHandler( messageHandler )
 		{
 			if( renderType == SceneDescription )
 			{
@@ -723,33 +852,15 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 
 			if( name == "camera" )
 			{
-				if( value == nullptr )
-				{
-					m_camera = "";
-				}
-				else if( const IECore::StringData *d = reportedCast<const IECore::StringData>( value, "option", name ) )
-				{
-					m_camera = d->readable();
-
-				}
-				return;
+				m_camera = ::option<string>( value, name, "" );
 			}
 			else if( name == "frame" || name == "sampleMotion" )
 			{
 				// We know what these mean, we just have no use for them.
-				return;
 			}
 			else if( name == "gl:selection" )
 			{
-				if( value == nullptr )
-				{
-					m_selection.clear();
-				}
-				else if( auto d = reportedCast<const IECore::PathMatcherData>( value, "option", name ) )
-				{
-					m_selection = d->readable();
-				}
-				return;
+				m_selection = ::option<IECore::PathMatcher>( value, name, IECore::PathMatcher() );
 			}
 			else if(
 				boost::starts_with( name.string(), "gl:primitive:" ) ||
@@ -767,15 +878,24 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 					m_baseStateOptions->members().erase( name );
 				}
 				m_baseState = nullptr; // We'll update it lazily in `baseState()`
-				return;
+			}
+			/// \todo We can't support this being modified after the scene has
+			/// already been generated, because we've thrown away the source
+			/// objects already. This is similar to `ai:ignore_subdivision`.
+			/// Perhaps `option()` should have a return value to indicate to the
+			/// RenderController that it needs to resend objects?
+			else if( name == "gl:renderObjects" )
+			{
+				m_renderObjects = ::option<bool>( value, name, true );
 			}
 			else if( boost::contains( name.string(), ":" ) && !boost::starts_with( name.string(), "gl:" ) )
 			{
 				// Ignore options prefixed for some other renderer.
-				return;
 			}
-
-			IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer::option", boost::format( "Unknown option \"%s\"." ) % name.c_str() );
+			else
+			{
+				IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer::option", fmt::format( "Unknown option \"{}\".", name.string() ) );
+			}
 		}
 
 		void output( const IECore::InternedString &name, const Output *output ) override
@@ -803,7 +923,14 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 		{
 			IECore::MessageHandler::Scope s( m_messageHandler.get() );
 
-			OpenGLCameraPtr result = new OpenGLCamera( name, camera, static_cast<const OpenGLAttributes *>( attributes ), m_editQueue );
+			ConstOpenGLAttributesPtr openGLAttributes = static_cast<const OpenGLAttributes *>( attributes );
+			if( !openGLAttributes )
+			{
+				ConstCompoundObjectPtr emptyAttributes = new CompoundObject;
+				openGLAttributes = new OpenGLAttributes( emptyAttributes.get() );
+			}
+
+			OpenGLCameraPtr result = new OpenGLCamera( name, camera, openGLAttributes, m_editQueue );
 			m_editQueue.push( [this, result, name]() {
 				m_objects.push_back( result );
 				m_cameras[name] = result;
@@ -831,6 +958,11 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 
 		Renderer::ObjectInterfacePtr object( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override
 		{
+			if( !m_renderObjects && !runTimeCast<const IECoreScenePreview::Placeholder>( object ) )
+			{
+				return nullptr;
+			}
+
 			IECore::MessageHandler::Scope s( m_messageHandler.get() );
 
 			OpenGLObjectPtr result = new OpenGLObject( name, object, static_cast<const OpenGLAttributes *>( attributes ), m_editQueue );
@@ -849,7 +981,12 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 
 			if( m_renderType == Interactive )
 			{
-				renderInteractive();
+				// We currently don't have any use for interactively rendering
+				// to outputs defined by the `output()` function. To facilitate
+				// interactive use in a CompoundRenderer (where the other
+				// renderer _is_ rendering to the outputs), we instead define a
+				// separate `gl:renderToCurrentContext` command which renders
+				// into a framebuffer managed by the client.
 			}
 			else
 			{
@@ -879,14 +1016,26 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 			{
 				return querySelectedObjects( parameters );
 			}
+			else if( name == "gl:renderToCurrentContext" )
+			{
+				renderToCurrentContext( parameters );
+				return nullptr;
+			}
+			else if( boost::starts_with( name.string(), "gl:" ) || name.string().find( ":" ) == string::npos )
+			{
+				IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer::command", fmt::format( "Unknown command \"{}\".", name.string() ) );
+			}
 
-			throw IECore::Exception( "Unknown command" );
+			return nullptr;
 		}
 
 	private :
 
-		void renderInteractive()
+		void renderToCurrentContext( const IECore::CompoundDataMap &parameters )
 		{
+			const string colorSpaceString = parameter<string>( parameters, "colorSpace", "scene" );
+			const Visualisation::ColorSpace colorSpace = colorSpaceString == "scene" ? Visualisation::ColorSpace::Scene : Visualisation::ColorSpace::Display;
+
 			processQueue();
 			removeDeletedObjects();
 			CachedConverter::defaultCachedConverter()->clearUnused();
@@ -910,6 +1059,10 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 					/// \todo Change IECoreGL::Selector so it provides a partial state object
 					/// containing only the things it needs to change.
 					IECoreGL::StatePtr shapeState = new IECoreGL::State( /* complete = */ false );
+					shapeState->add( state->get<IECoreGL::Primitive::DrawWireframe>() );
+					shapeState->add( state->get<IECoreGL::Primitive::DrawSolid>() );
+					shapeState->add( state->get<IECoreGL::Primitive::DrawOutline>() );
+					shapeState->add( state->get<IECoreGL::Primitive::DrawPoints>() );
 					shapeState->add( state->get<IECoreGL::PointsPrimitive::UseGLPoints>() );
 					shapeState->add( state->get<IECoreGL::PointsPrimitive::GLPointWidth>() );
 					shapeState->add( state->get<IECoreGL::CurvesPrimitive::UseGLLines>() );
@@ -921,11 +1074,11 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 					IECoreGL::State::ScopedBinding shapeStateBinding(
 						*shapeState, const_cast<IECoreGL::State &>( *state )
 					);
-					renderObjects( state );
+					renderObjects( state, colorSpace );
 				}
 				else
 				{
-					renderObjects( state );
+					renderObjects( state, colorSpace );
 				}
 
 			glPopAttrib();
@@ -982,7 +1135,11 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 
 				camera->camera()->render( state );
 
-				renderObjects( state );
+				/// \todo Should we separate these into different AOVs rendered
+				/// to different files? Or provide a mechanism for registering
+				/// transforms that we apply ourselves?
+				renderObjects( state, Visualisation::ColorSpace::Scene );
+				renderObjects( state, Visualisation::ColorSpace::Display );
 
 				writeOutputs( frameBuffer.get() );
 
@@ -1040,7 +1197,7 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 			);
 		}
 
-		void renderObjects( IECoreGL::State *currentState )
+		void renderObjects( IECoreGL::State *currentState, Visualisation::ColorSpace colorSpace )
 		{
 			IECoreGL::Selector *selector = IECoreGL::Selector::currentSelector();
 
@@ -1051,7 +1208,7 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 				{
 					selector->loadName( i++ );
 				}
-				o->render( currentState, m_selection );
+				o->render( currentState, m_selection, colorSpace );
 			}
 		}
 
@@ -1078,7 +1235,7 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 				}
 				else
 				{
-					IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer", boost::format( "Unsupported data format \"%s\"." ) % data );
+					IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer", fmt::format( "Unsupported data format \"{}\".", data ) );
 					return;
 				}
 
@@ -1086,7 +1243,7 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 				IECore::WriterPtr writer = IECore::Writer::create( image, "tmp." + type );
 				if( !writer )
 				{
-					IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer", boost::format( "Unsupported display type \"%s\"." ) % type );
+					IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer", fmt::format( "Unsupported display type \"{}\".", type ) );
 					return;
 				}
 
@@ -1099,16 +1256,23 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 		{
 			const bool selected = parameter<bool>( parameters, "selection", false );
 
+			const PathMatcher omitted = parameter<PathMatcher>( parameters, "omitted", PathMatcher() );
+			const bool omittedEmpty = omitted.isEmpty();
+
 			processQueue();
 			removeDeletedObjects();
 
 			Box3f result;
 			for( const auto &o : m_objects )
 			{
-				if( selected && !o->selected( m_selection ) )
+				if(
+					( selected && !o->selected( m_selection ) ) ||
+					( !omittedEmpty && ( omitted.match( o->name() ) & ( PathMatcher::AncestorMatch | PathMatcher::ExactMatch ) ) )
+				)
 				{
 					continue;
 				}
+
 				result.extendBy( o->transformedBound() );
 			}
 			return new Box3fData( result );
@@ -1184,6 +1348,7 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 		IECore::PathMatcher m_selection;
 		IECore::CompoundObjectPtr m_baseStateOptions;
 		IECoreGL::StatePtr m_baseState;
+		bool m_renderObjects;
 
 		IECore::MessageHandlerPtr m_messageHandler;
 
@@ -1194,13 +1359,13 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 		// from m_editQueue.
 
 		unordered_map<InternedString, ConstOutputPtr> m_outputs;
-		typedef std::unordered_map<string, OpenGLCameraPtr> CameraMap;
+		using CameraMap = std::unordered_map<string, OpenGLCameraPtr>;
 		CameraMap m_cameras;
 
-		typedef std::vector<OpenGLObjectPtr> OpenGLObjectVector;
+		using OpenGLObjectVector = std::vector<OpenGLObjectPtr>;
 		OpenGLObjectVector m_objects;
 
-		typedef std::vector<OpenGLAttributesPtr> OpenGLAttributesVector;
+		using OpenGLAttributesVector = std::vector<OpenGLAttributesPtr>;
 		OpenGLAttributesVector m_attributes;
 
 		// Registration with factory

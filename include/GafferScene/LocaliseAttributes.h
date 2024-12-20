@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_LOCALISEATTRIBUTES_H
-#define GAFFERSCENE_LOCALISEATTRIBUTES_H
+#pragma once
 
 #include "GafferScene/AttributeProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERSCENE_API LocaliseAttributes : public AttributeProcessor
 
 	public :
 
-		LocaliseAttributes( const std::string &name=defaultName<LocaliseAttributes>() );
+		explicit LocaliseAttributes( const std::string &name=defaultName<LocaliseAttributes>() );
 		~LocaliseAttributes() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::LocaliseAttributes, LocaliseAttributesTypeId, AttributeProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::LocaliseAttributes, LocaliseAttributesTypeId, AttributeProcessor );
 
 		Gaffer::StringPlug *attributesPlug();
 		const Gaffer::StringPlug *attributesPlug() const;
@@ -72,5 +71,3 @@ class GAFFERSCENE_API LocaliseAttributes : public AttributeProcessor
 IE_CORE_DECLAREPTR( LocaliseAttributes )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_LOCALISEATTRIBUTES_H

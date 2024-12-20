@@ -37,6 +37,7 @@
 import os
 import sys
 import distutils
+import re
 
 import IEEnv
 
@@ -59,11 +60,12 @@ def getOption( name, default ) :
 # parse SConstruct file for the gafferVersion
 ##########################################################################
 
-def gafferRegistryVersion() :
-
+## \todo: this is duplicated from ./installAll but can we centralize it instead?
+def gafferVersionFromScons() :
 	import re
+
 	sconsFile = "SConstruct"
-	versionVars = ["gafferMilestoneVersion", "gafferMajorVersion"]
+	versionVars = ["gafferMilestoneVersion", "gafferMajorVersion", "gafferMinorVersion", "gafferPatchVersion"]
 	varsToFind = list(versionVars)
 
 	varsFound = {}
@@ -81,30 +83,58 @@ def gafferRegistryVersion() :
 	if varsToFind:
 		raise Exception( "Could not find the gaffer version in the SConstruct file. Please review the parsing rules." )
 
-	return varsFound["gafferMilestoneVersion"] + "." + varsFound["gafferMajorVersion"] + ".0.0"
+	return ".".join( [varsFound[k] for k in versionVars] )
 
 
-cortexMajorVersion = getOption( "CORTEX_MAJOR_VERSION", os.environ["CORTEX_MAJOR_VERSION"] )
+def gafferRegistryVersion( gafferVersion ) :
+
+	# have to do local imports for some reason on the options file
+	import distutils
+	import IEEnv
+
+	gafferCompatibilityVersion = ".".join( gafferVersion.split( "." )[:2] )
+	looseGafferVersion = distutils.version.LooseVersion( gafferVersion )
+	registryVersions = list( IEEnv.registry["apps"]["gaffer"].keys() )
+	# only keep entries that have the expected elements
+	registryVersions = [x for x in registryVersions if len( x.split( "." ) ) == 4]
+	# only keep those that are of the same compatibility version
+	registryVersions = [x for x in registryVersions if x.startswith( gafferCompatibilityVersion + "." )]
+	# only keep those that are the same or older than the one we are installing
+	registryVersions = [x for x in registryVersions if looseGafferVersion >= distutils.version.LooseVersion( x )]
+	# sort the remaining entries by LooseVersion, and pick the first one
+	registryVersions.sort( key=distutils.version.LooseVersion, reverse=True )
+
+	if not registryVersions:
+		raise Exception( "Could not find a matching registry entry for {}".format( gafferVersion ) )
+
+	registryVersion = registryVersions[0]
+	return registryVersion
+
+
 cortexVersion = getOption( "CORTEX_VERSION", os.environ["CORTEX_VERSION"] )
-cortexMajorVersion = cortexVersion.split( "." )[0]
-cortexReg = IEEnv.registry["libraries"]["cortex"][cortexMajorVersion].get( IEEnv.platform(), IEEnv.registry["libraries"]["cortex"][cortexMajorVersion] )
+cortexCompatibilityVersion = ".".join( cortexVersion.split( "." )[0:2] )
+cortexReg = IEEnv.registry["libraries"]["cortex"][cortexCompatibilityVersion][IEEnv.platform()]
 compiler = getOption( "COMPILER", None )
 compilerVersion = getOption( "COMPILER_VERSION", None )
+pythonVersion = getOption( "PYTHON_VERSION", cortexReg["preferredPythonVersion"] )
 targetApp = getOption( "APP", None )
 targetAppVersion = None
 
-## \todo: 0.13.0.0 is the first version that we started tracking
-## Gaffer dependency versions in IEEnv. Should we instead have a
-## more central "libraries we care about" section in IEEnv?
+if int( getOption( "IE_STOMP_VERSION", "0" ) ):
+	gafferVersion = os.environ["GAFFER_VERSION"]
+	GAFFER_MILESTONE_VERSION, GAFFER_MAJOR_VERSION, GAFFER_MINOR_VERSION, patchAndSuffix = os.environ["GAFFER_VERSION"].rstrip( "dev" ).split( "." )
+	GAFFER_PATCH_VERSION, GAFFER_VERSION_SUFFIX = re.match(r"([0-9]*)([^0-9]?.*)", patchAndSuffix).groups()
+else:
+	gafferVersion = gafferVersionFromScons()
 
-gafferReg = IEEnv.registry["apps"]["gaffer"][gafferRegistryVersion()][IEEnv.platform()]
+registryVersion = gafferRegistryVersion( gafferVersion )
+gafferReg = IEEnv.registry["apps"]["gaffer"][registryVersion][IEEnv.platform()]
+gafferBuildVariant = getOption( "GAFFER_BUILD_VARIANT", "py3" )
 qtVersion = gafferReg["qtVersion"]
 pysideVersion = gafferReg.get( "pysideVersion", "2.0.0" )
-oiioVersion = gafferReg["OpenImageIO"]
-ocioVersion = gafferReg["OpenColorIO"]
-oslVersion = gafferReg["OpenShadingLanguage"]
-vdbVersion = gafferReg.get( "OpenVDB", "4.0.2" )
 qtPyVersion = gafferReg.get( "qtPyVersion", "1.0.0.b3" )
+fmtVersion = gafferReg.get( "fmtVersion", "9.1.0" )
+embreeVersion = gafferReg.get( "embreeVersion", "3.13.5" )
 
 vTuneVersion = getOption( "VTUNE_VERSION", os.environ["VTUNE_VERSION"] )
 VTUNE_ROOT = IEEnv.registry["apps"]["vtune"][vTuneVersion][IEEnv.platform()]["location"]
@@ -139,7 +169,7 @@ if targetApp :
 			LINKFLAGS = targetAppLinkFlags
 
 	qtVersion = targetAppReg.get( "qtVersion", qtVersion )
-	
+
 	if targetApp == "houdini" :
 		if distutils.version.LooseVersion(targetAppVersion) >= distutils.version.LooseVersion("17.0") and distutils.version.LooseVersion(targetAppVersion) < distutils.version.LooseVersion("18.0"):
 			VDB_LIB_SUFFIX = "_sesi"
@@ -148,12 +178,11 @@ else :
 
 	targetApp = "gaffer"
 	targetAppReg = gafferReg
-	pythonVersion = cortexReg["preferredPythonVersion"]
 	platformReg = IEEnv.registry["platformDefaults"][IEEnv.platform()]
 	if not compiler :
-		compiler = platformReg.get( "toolsCompiler", platformReg["compiler"] )
+		compiler = cortexReg.get( "compiler", platformReg["compiler"] )
 	if not compilerVersion :
-		compilerVersion = platformReg.get( "toolsCompilerVersion", platformReg["compilerVersion"] )
+		compilerVersion = cortexReg.get( "compilerVersion", platformReg["compilerVersion"] )
 
 CXXSTD = targetAppReg.get( "cxxStd", cortexReg.get( "cxxStd", "c++11" ) )
 
@@ -167,6 +196,13 @@ try :
 except :
 	ARNOLD_ROOT = ""
 
+cyclesVersion = getOption( "CYCLES_VERSION", targetAppReg.get( "cyclesVersion", os.environ.get( "CYCLES_VERSION", "" ) ) )
+
+if cyclesVersion == "" :
+	CYCLES_ROOT = ""
+else :
+	CYCLES_ROOT = os.path.join( IEEnv.Environment.rootPath(), "apps", "cycles", cyclesVersion, IEEnv.platform(), compiler, compilerVersion )
+
 dlVersion = getOption( "DL_VERSION", os.environ.get( "DL_VERSION", "" ) )
 
 try :
@@ -175,23 +211,15 @@ try :
 except :
 	DELIGHT_ROOT = ""
 
-appleseedVersion = getOption( "APPLESEED_VERSION", os.environ.get( "APPLESEED_VERSION", "" ) )
-try :
-	appleseedReg = IEEnv.registry["apps"]["appleseed"][appleseedVersion][IEEnv.platform()]
-	APPLESEED_ROOT = appleseedReg["location"] if compilerVersion != "4.1.2" else ""
-	LOCATE_DEPENDENCY_APPLESEED_SEARCHPATH = os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "appleseed", appleseedVersion, "plugins", compiler, compilerVersion )
-except :
-	APPLESEED_ROOT = ""
-
-OSLHOME = os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenShadingLanguage", oslVersion, IEEnv.platform(), compiler, compilerVersion )
-
 sphinxRoot = os.path.join( IEEnv.Environment.rootPath(), "apps", "sphinx", "1.4.1" )
+
+PYBIND11 = os.path.join( IEEnv.Environment.rootPath(), "apps", "pybind11", "2.8.1", IEEnv.platform(), compiler, compilerVersion )
 
 ##########################################################################
 # set where we'll put things
 ##########################################################################
 
-versionString = "${GAFFER_MILESTONE_VERSION}.${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}"
+versionString = "${GAFFER_MILESTONE_VERSION}.${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}${GAFFER_VERSION_SUFFIX}"
 if getOption( "RELEASE", "0" )=="1" :
 	buildRoot = "/tmp/gafferBuilds"
 	installRoot = "/software"
@@ -200,16 +228,17 @@ else :
 	installRoot = os.path.expanduser( "/tmp/gafferTestInstalls" )
 	versionString += "dev"
 
-baseBuildDir = os.path.join( buildRoot, "apps", "gaffer", versionString, IEEnv.platform(), "cortex", cortexMajorVersion )
-baseInstallDir = os.path.join( installRoot, "apps", "gaffer", versionString, IEEnv.platform(), "cortex", cortexMajorVersion )
+baseBuildDir = os.path.join( buildRoot, "apps", "gaffer", versionString, IEEnv.platform(), "cortex", cortexCompatibilityVersion )
+baseInstallDir = os.path.join( installRoot, "apps", "gaffer", versionString, IEEnv.platform(), "cortex", cortexCompatibilityVersion )
 
 BUILD_DIR = os.path.join( baseBuildDir, targetApp )
 INSTALL_DIR = os.path.join( baseInstallDir, targetApp )
-
 if targetAppVersion :
-
 	BUILD_DIR = os.path.join( BUILD_DIR, targetAppMajorVersion )
 	INSTALL_DIR = os.path.join( INSTALL_DIR, targetAppMajorVersion )
+else :
+	BUILD_DIR = os.path.join( BUILD_DIR, gafferBuildVariant )
+	INSTALL_DIR = os.path.join( INSTALL_DIR, gafferBuildVariant )
 
 GAFFERCORTEX = True
 
@@ -217,11 +246,20 @@ GAFFERCORTEX = True
 # get include locations right
 ##########################################################################
 
+alembicVersion = targetAppReg.get( "AlembicVersion", cortexReg["AlembicVersion"] )
 boostVersion = targetAppReg.get( "boostVersion", cortexReg["boostVersion"] )
-tbbVersion = targetAppReg.get( "tbbVersion", cortexReg["tbbVersion"] ) 
+ocioVersion = targetAppReg.get( "OpenColorIOVersion", cortexReg["OpenColorIOVersion"] )
 exrVersion = targetAppReg.get( "OpenEXRVersion", cortexReg["OpenEXRVersion"] )
+oiioVersion = targetAppReg.get( "OpenImageIOVersion", cortexReg["OpenImageIOVersion"] )
+oiioLibSuffix = targetAppReg.get( "OpenImageIOLibSuffix", oiioVersion )
+ocioLibSuffix = targetAppReg.get( "OpenColorIOLibSuffix", IEEnv.BuildUtil.libSuffix( "OpenColorIO", ocioVersion ) )
+vdbVersion = targetAppReg.get( "OpenVDBVersion", cortexReg["OpenVDBVersion"] )
+oslVersion = targetAppReg.get( "OpenShadingLanguageVersion", gafferReg.get( "OpenShadingLanguageVersion", cortexReg["OpenShadingLanguageVersion"] ) )
+tbbVersion = targetAppReg.get( "tbbVersion", cortexReg["tbbVersion"] )
 usdVersion = targetAppReg.get( "usdVersion", cortexReg["usdVersion"] )
-vdbVersion = targetAppReg.get( "vdbVersion", cortexReg["vdbVersion"] )
+pcgVersion = "0.1.0" # At IE, we have labelled the current main, commit 428802d, as 0.1.0
+
+OSLHOME = os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenShadingLanguage", oslVersion, IEEnv.platform(), compiler, compilerVersion )
 
 LOCATE_DEPENDENCY_SYSTEMPATH = [
 
@@ -229,6 +267,7 @@ LOCATE_DEPENDENCY_SYSTEMPATH = [
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenImageIO", oiioVersion, IEEnv.platform(), compiler, compilerVersion, "include" ),
 	os.path.join( OSLHOME, "include" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "qt", qtVersion, IEEnv.platform(), compiler, compilerVersion, "include" ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "fmt", fmtVersion, IEEnv.platform(), compiler, compilerVersion, "include" ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "include", IEEnv.platform(), "glew", targetAppReg.get( "glew", cortexReg["glewVersion"] ) ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "include", IEEnv.platform(), "OpenEXR", exrVersion ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "include", IEEnv.platform(), "OpenEXR", exrVersion, "OpenEXR" ),
@@ -236,6 +275,7 @@ LOCATE_DEPENDENCY_SYSTEMPATH = [
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "include", IEEnv.platform(), "boost", boostVersion ),
 	os.path.join( pythonReg["location"], compiler, compilerVersion, pythonReg["include"], "python" + pythonVersion ),
 	"/usr/include/freetype2",
+	os.path.join( IEEnv.Environment.rootPath(), "tools", "include", IEEnv.platform(), "pcg", pcgVersion ),
 ]
 
 # append openVDB header when we are not building for Houdini.
@@ -249,13 +289,17 @@ elif targetApp == "houdini" and distutils.version.LooseVersion(targetAppVersion)
 		LOCATE_DEPENDENCY_SYSTEMPATH[:0] = [ os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenVDB", vdbVersion, IEEnv.platform(), compiler, compilerVersion, "python", "include", "python{0}".format( pythonVersion ) ) ]
 
 if targetAppVersion :
+	appSpecificPaths = []
+	for x in targetAppReg.get( 'includes', [] ) :
+		appSpecificPaths.append( os.path.join( targetAppReg['location'], x ) )
+
 	# for Houdini, we are favouring our dependency rather than sideFx's
 	# given that 17.5 is shipping with openExr mangled lib without python binding.
 	# We should reassess for next version of Houdini to see if that still holds true.
 	if targetApp == "houdini" :
-		LOCATE_DEPENDENCY_SYSTEMPATH += [ os.path.join( targetAppReg['location'], x ) for x in targetAppReg.get( 'includes', [] ) ]
+		LOCATE_DEPENDENCY_SYSTEMPATH += appSpecificPaths
 	else :
-		LOCATE_DEPENDENCY_SYSTEMPATH[:0] = [ os.path.join( targetAppReg['location'], x ) for x in targetAppReg.get( 'includes', [] ) ]
+		LOCATE_DEPENDENCY_SYSTEMPATH[:0] = appSpecificPaths
 
 LOCATE_DEPENDENCY_CPPPATH = [
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "include" ),
@@ -283,17 +327,18 @@ LOCATE_DEPENDENCY_LIBPATH = [
 	os.path.join( pythonReg["location"], compiler, compilerVersion, "lib" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "lib", compiler, compilerVersion ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "arnold", arnoldVersion, "lib", compiler, compilerVersion ),
-	os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "appleseed", appleseedVersion, "lib", compiler, compilerVersion ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "tbb", tbbVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "qt", qtVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "PySide", pysideVersion, "qt" + qtVersion, "python" + pythonVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
 	os.path.join( OSLHOME, "lib64" ),
-	os.path.join( IEEnv.Environment.rootPath(), "apps", "usd", usdVersion, IEEnv.platform(), compiler, compilerVersion, "cortex", cortexMajorVersion, "lib" ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "Alembic", alembicVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenVDB", vdbVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenVDB", vdbVersion, IEEnv.platform(), compiler, compilerVersion, "python", "lib", "python{0}".format( pythonVersion ) ),
-	os.path.join( IEEnv.Environment.rootPath(), "apps", "appleseed", appleseedVersion, IEEnv.platform(), "lib" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "openexr", exrVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "openexr", exrVersion, IEEnv.platform(), compiler, compilerVersion, "python", pythonVersion, "boost", boostVersion, "lib64" ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "lib", IEEnv.platform(), compiler, compilerVersion ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "embree", embreeVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenColorIO", ocioVersion, IEEnv.platform(), compiler, compilerVersion, "lib" ),
 
 ]
 
@@ -301,25 +346,23 @@ LOCATE_DEPENDENCY_PYTHONPATH = [
 
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "python", pythonVersion, compiler, compilerVersion ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "arnold", arnoldVersion, "python", pythonVersion, compiler, compilerVersion ),
-	os.path.join( IEEnv.Environment.rootPath(), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "appleseed", appleseedVersion, "python", pythonVersion, compiler, compilerVersion ),
-	os.path.join( IEEnv.Environment.rootPath(), "apps", "openexr", exrVersion, IEEnv.platform(), compiler, compilerVersion, "python", pythonVersion, "boost", boostVersion, "lib64", "python" + pythonVersion, "site-packages" ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "openexr", exrVersion, IEEnv.platform(), compiler, compilerVersion, "python", pythonVersion, "boost", boostVersion, "lib", "python" + pythonVersion, "site-packages" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenColorIO", ocioVersion, IEEnv.platform(), compiler, compilerVersion, "lib", "python" + pythonVersion, "site-packages" ),
-	os.path.join( IEEnv.Environment.rootPath(), "apps", "usd", usdVersion, IEEnv.platform(), compiler, compilerVersion, "cortex", cortexMajorVersion, "lib", "python" ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "usd", usdVersion, IEEnv.platform(), compiler, compilerVersion, "cortex", cortexCompatibilityVersion, "lib", "python" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "OpenVDB", vdbVersion, IEEnv.platform(), compiler, compilerVersion, "python", "lib", "python" + pythonVersion ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "PySide", pysideVersion, "qt" + qtVersion, "python" + pythonVersion, IEEnv.platform(), compiler, compilerVersion, "python" ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "python", pythonVersion, IEEnv.platform(), compiler, compilerVersion, "sip", "4" ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "python", pythonVersion, IEEnv.platform(), compiler, compilerVersion, "subprocess32", "3" ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "python", pythonVersion, IEEnv.platform(), compiler, compilerVersion, "PyOpenGL", "3" ),
 	os.path.join( IEEnv.Environment.rootPath(), "tools", "python", pythonVersion, "noarch" ),
-	os.path.join( sphinxRoot, "lib", "python" + pythonVersion, "site-packages" ),
-	os.path.join( sphinxRoot, "lib64", "python" + pythonVersion, "site-packages" ),
 	os.path.join( IEEnv.Environment.rootPath(), "apps", "Qt.py", qtPyVersion ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "six", os.environ["SIX_VERSION"] ),
 
 ]
 
 LOCATE_DEPENDENCY_RESOURCESPATH = [
 
-	os.path.join( IEEnv.Environment.rootPath(), "apps", "gafferResources", "0.46.1.0", "resources" ),
+	os.path.join( IEEnv.Environment.rootPath(), "apps", "gafferResources", "0.54.2.0", "resources" ),
 
 ]
 
@@ -356,19 +399,12 @@ if getOption( "RELEASE", "0" )=="0" :
 	LOCATE_DEPENDENCY_LIBPATH[:0] = [
 		os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "lib", compiler, compilerVersion ),
 		os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "arnold", arnoldVersion, "lib", compiler, compilerVersion ),
-		os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "appleseed", appleseedVersion, "lib", compiler, compilerVersion ),
 	]
 
 	LOCATE_DEPENDENCY_PYTHONPATH[:0] = [
 		os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "python", pythonVersion, compiler, compilerVersion ),
 		os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "arnold", arnoldVersion, "python", pythonVersion, compiler, compilerVersion ),
-		os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "appleseed", appleseedVersion, "python", pythonVersion, compiler, compilerVersion ),
 	]
-
-	LOCATE_DEPENDENCY_APPLESEED_SEARCHPATH = ":".join( [
-		os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "appleseed", appleseedVersion, "plugins", compiler, compilerVersion ),
-		LOCATE_DEPENDENCY_APPLESEED_SEARCHPATH
-	] )
 
 	os.environ["IECOREGL_SHADER_INCLUDE_PATHS"] = os.path.join( os.path.expanduser( "~" ), "apps", "cortex", cortexVersion, IEEnv.platform(), "base", "glsl" ) + ":" + os.environ["IECOREGL_SHADER_INCLUDE_PATHS"]
 
@@ -379,6 +415,57 @@ if getOption( "RELEASE", "0" )=="0" :
 		)
 
 ##########################################################################
+# USD
+##########################################################################
+
+# base values
+if distutils.version.LooseVersion( usdVersion ) < distutils.version.LooseVersion( "21" ) :
+	usdLibPath = os.path.join( IEEnv.Environment.rootPath(), "apps", "usd", usdVersion, IEEnv.platform(), compiler, compilerVersion, "cortex", cortexCompatibilityVersion, "lib" )
+	usdIncludePath = os.path.join( IEEnv.Environment.rootPath(), "apps", "usd", usdVersion, IEEnv.platform(), compiler, compilerVersion, "cortex", cortexCompatibilityVersion, "include" )
+
+else :
+	usdLibPath = os.path.join( IEEnv.Environment.rootPath(), "apps", "usd", usdVersion, IEEnv.platform(), compiler, compilerVersion, "python", pythonVersion, "cortex", cortexCompatibilityVersion, "lib" )
+	usdIncludePath = os.path.join( IEEnv.Environment.rootPath(), "apps", "usd", usdVersion, IEEnv.platform(), compiler, compilerVersion, "python", pythonVersion, "cortex", cortexCompatibilityVersion, "include" )
+
+# targetApp-specific values
+if targetApp == "maya" :
+	mayaUsdVersion = targetAppReg.get( "mayaUsdVersion" )
+	mayaUsdReg = IEEnv.registry["apps"]["mayaUsd"].get( mayaUsdVersion, {} ).get( IEEnv.platform() )
+	if mayaUsdReg :
+		pluginUsdVersion = mayaUsdReg["usdVersion"]
+		# Pixar introduced a library prefix `usd_` in USD v21.11, which Autodesk does not use yet, so we have to reset the prefix.
+		# See https://github.com/Autodesk/maya-usd/issues/2108 for reference
+		if mayaUsdReg.get( "usdLibPrefix" ) is not None :
+			USD_LIB_PREFIX = mayaUsdReg[ "usdLibPrefix" ]
+
+		mayaLooseVersion = distutils.version.LooseVersion( targetAppVersion )
+		mayaPythonMajorVersion = ""
+		if mayaLooseVersion >= "2022" and mayaLooseVersion < "2023" :
+			# Maya 2022 installs the USD libs and the maya plugin itself for python 2 and 3. This is not the case for the 2020 version
+			# We make the assumption, that the python version suffix is for Maya 2022 only, because Maya 2023 will be python 3 exclusively.
+			mayaPythonMajorVersion = targetAppReg["pythonVersion"].split(".")[0]
+
+		mayaMajorVersion = targetAppVersion.split(".")[0]
+		usdIncludePath = os.path.join( mayaUsdReg["location"], mayaMajorVersion, "mayausd", "USD{}".format( mayaPythonMajorVersion ), "include" )
+		usdLibPath = os.path.join( mayaUsdReg["location"], mayaMajorVersion, "mayausd", "USD{}".format( mayaPythonMajorVersion ), "lib" )
+
+elif targetApp in ( "houdini", ) :
+	# Both nuke and houdini provide USD in their distribution.
+	# However, nuke doesn't provide includes, and the libs don't have python support, which prevents us from using them.
+	# And houdini has a mangled boost install which includes an "h" prefix which also messes up the GafferUSD build
+	# apparently because their USD includes have references to that mangled boost, which are needed by GafferUSD.
+	# As such, we are disabling GafferUSD build for those applications until we know we need to support that feature
+	# inside those dccs.
+	GAFFERUSD = False
+
+# We insert the include at the start because USD 20.11 defines a HALF_DIG macro that is also defined elsewhere and was raising a warning otherwise
+if usdIncludePath:
+	LOCATE_DEPENDENCY_SYSTEMPATH.insert(0, usdIncludePath)
+
+if usdLibPath:
+	LOCATE_DEPENDENCY_LIBPATH.insert(0, usdLibPath)
+
+##########################################################################
 # get compiler and other build tools set up
 ##########################################################################
 
@@ -387,43 +474,85 @@ CXX = os.path.join( compilerReg["location"], compilerReg["bin"] )
 
 SPHINX = os.path.join( sphinxRoot, "bin", "sphinx-build" )
 
-# for app installs we copy the docs and graphics from the standalone install
-if targetAppVersion and "install" in sys.argv :
+if "install" in sys.argv :
+	# disable docs for installations (the postInstall command will symlink them from the public build)
 	SPHINX = "disableDocs"
-	INKSCAPE = "disableGraphics"
-	INSTALL_POST_COMMAND="scons -i -f config/ie/postInstall STANDALONE_INSTALL_DIR={baseInstallDir}/gaffer INSTALL_DIR=$INSTALL_DIR".format( baseInstallDir = baseInstallDir )
+
+	INSTALL_POST_COMMAND="scons -i -f config/ie/postInstall BASE_INSTALL_DIR={baseInstallDir} INSTALL_DIR=$INSTALL_DIR GAFFER_BUILD_VARIANT={gafferBuildVariant}".format(
+		baseInstallDir = baseInstallDir,
+		gafferBuildVariant = gafferBuildVariant,
+	)
 
 ##########################################################################
 # figure out the lib suffixes
 ##########################################################################
 
-compilerVersionSplit = compilerVersion.split( "." )
-# figure out the suffix for boost libraries
-boostVersion = targetAppReg.get( "boostVersion", cortexReg["boostVersion"] )
-boostVersionSuffix = "-mt-" + boostVersion.replace( ".", "_" )
-while boostVersionSuffix.endswith( "_0" ) :
-	boostVersionSuffix = boostVersionSuffix[:-2]
-
-OIIO_LIB_SUFFIX = "-%s" % oiioVersion
-OCIO_LIB_SUFFIX = "-%s" % ocioVersion
-OSL_LIB_SUFFIX = "-%s" % oslVersion
-
-BOOST_LIB_SUFFIX = "-" + compiler + compilerVersionSplit[0] + compilerVersionSplit[1] + boostVersionSuffix
-
-OPENEXR_LIB_SUFFIX = "-" + exrVersion
-
-CORTEX_LIB_SUFFIX = "-" + cortexMajorVersion
-CORTEX_PYTHON_LIB_SUFFIX = "-" + cortexMajorVersion + "-python" + pythonVersion
+IMATH_LIB_SUFFIX = IEEnv.BuildUtil.libSuffix( "OpenEXR", exrVersion )
+OIIO_LIB_SUFFIX = IEEnv.BuildUtil.libSuffix( "OpenImageIO", oiioLibSuffix )
+# ocioLibSuffix, when provided, should be used directly, without the addition of "-"
+# For example, when set to "Foundry"
+OCIO_LIB_SUFFIX = ocioLibSuffix
+OSL_LIB_SUFFIX = IEEnv.BuildUtil.libSuffix( "OpenShadingLanguage", oslVersion )
+BOOST_LIB_SUFFIX = IEEnv.BuildUtil.libSuffix( "boost", boostVersion, { "compiler" : compiler, "compilerVersion" : compilerVersion } )
+BOOST_PYTHON_LIB_SUFFIX = IEEnv.BuildUtil.libSuffix(
+	"boost_python", boostVersion, { "compiler" : compiler, "compilerVersion" : compilerVersion, "pythonVersion" : pythonVersion }
+)
+CORTEX_LIB_SUFFIX = IEEnv.BuildUtil.libSuffix( "cortex", cortexCompatibilityVersion )
+CORTEX_PYTHON_LIB_SUFFIX = CORTEX_LIB_SUFFIX + "-python" + pythonVersion
 
 os.environ["PATH"] = os.path.join( pythonReg["location"], compiler, compilerVersion, "bin" ) + ":" + os.environ["PATH"]
 os.environ["PYTHONHOME"] = os.path.join( pythonReg["location"], compiler, compilerVersion )
+sys.path.extend( [
+	os.path.join( sphinxRoot, "lib", "python" + pythonVersion, "site-packages" ),
+	os.path.join( sphinxRoot, "lib64", "python" + pythonVersion, "site-packages" ),
+] )
 
 os.environ["OCIO"] = os.path.join( IEEnv.Environment.rootPath(), "config", "openColorIO", "nuke-default", "config.ocio" )
 
-# we need these imported so we can run the commands to generate the documentation
-ENV_VARS_TO_IMPORT="PATH PYTHONPATH PYTHONHOME IEENV_ROOT IEENV_DISABLE_WRAPPER_ENV_CHECK IECORE_FONT_PATHS IECOREGL_SHADER_INCLUDE_PATHS OCIO IEENV_WORKING_PATH DOXYGEN_VERSION OSL_VERSION SCONS_VERSION"
+# we need these imported so we can run subprocess commands
+# variables specified in this list AND present in os.environ
+# will be setup in the scons env.
+ENV_VARS_TO_IMPORT = " ".join( [
+	"PATH",
+	"PYTHONPATH",
+	"PYTHONHOME",
+	"IEENV_ROOT",
+	"IEENV_DISABLE_WRAPPER_ENV_CHECK",
+	"IEENV_LIBRARY_PREFIX_PATH",
+	"IEENV_WORKING_PATH",
+	"IECORE_FONT_PATHS",
+	"IECOREGL_SHADER_INCLUDE_PATHS",
+	"COMPILER_VERSION",
+	"SCONS_VERSION",
+	"DOXYGEN_VERSION",
+	"OSL_VERSION",
+	"OCIO",
+	"QT_VERSION",
+	"QT_QPA_PLATFORM_PLUGIN_PATH",
+	"GAFFER_JEMALLOC",
+	"CORTEX_PREFERRED_PYTHON_VERSION",
+] )
+
+# required if scons compiler version doesn't match the build compiler version
+os.environ["COMPILER_VERSION"] = compilerVersion
+# required for subprocesses that need to locate standard libs (eg oslc)
+os.environ["IEENV_LIBRARY_PREFIX_PATH"] = "/software/tools/lib/$PLATFORM/$COMPILER/$COMPILER_VERSION"
+# make sure the OSL we are building with is the one used by oslc
+os.environ["OSL_VERSION"] = oslVersion
 # the output is pretty tedious without this disabled
 os.environ["IEENV_DISABLE_WRAPPER_ENV_CHECK"] = "1"
+# disable jemalloc for doc builds. the docs run with the native gaffer binary and it can't locate our custom libjemalloc
+os.environ["GAFFER_JEMALLOC"] = "0"
+# required to run gaffer gui for the doc builds
+os.environ["QT_VERSION"] = qtVersion
+os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join( IEEnv.Environment.rootPath(), "apps", "qt", qtVersion, IEEnv.platform(), compiler, compilerVersion, "plugins" )
+
+# also prepend the qt bin path to the search path so that we get `moc` directly from it, instead of the wrapper
+# this is so that the moc file creation creates a proper dependency to the qt version being used
+# via the moc binary path
+os.environ["PATH"] = os.path.join( IEEnv.Environment.rootPath(), "apps", "qt", qtVersion, IEEnv.platform(), compiler, compilerVersion, "bin" ) + ":" + os.environ["PATH"]
+# Required to run `moc` without the wrapper
+LOCATE_DEPENDENCY_LIBPATH.append( os.path.join( IEEnv.Environment.rootPath(), "apps", compiler, compilerVersion, IEEnv.platform(), "lib64" ) )
 
 # speed up the build a bit hopefully.
 BUILD_CACHEDIR = os.environ["IEBUILD_CACHEDIR"]

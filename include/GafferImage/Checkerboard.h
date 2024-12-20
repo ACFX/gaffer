@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_CHECKERBOARD_H
-#define GAFFERIMAGE_CHECKERBOARD_H
+#pragma once
 
 #include "GafferImage/FormatPlug.h"
 #include "GafferImage/FlatImageSource.h"
@@ -59,10 +58,10 @@ class GAFFERIMAGE_API Checkerboard : public FlatImageSource
 
 	public :
 
-		Checkerboard( const std::string &name=defaultName<Checkerboard>() );
+		explicit Checkerboard( const std::string &name=defaultName<Checkerboard>() );
 		~Checkerboard() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Checkerboard, CheckerboardTypeId, FlatImageSource );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Checkerboard, CheckerboardTypeId, FlatImageSource );
 
 		GafferImage::FormatPlug *formatPlug();
 		const GafferImage::FormatPlug *formatPlug() const;
@@ -106,5 +105,3 @@ class GAFFERIMAGE_API Checkerboard : public FlatImageSource
 IE_CORE_DECLAREPTR( Checkerboard )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_CHECKERBOARD_H

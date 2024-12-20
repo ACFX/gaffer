@@ -104,7 +104,7 @@ class BoxIOSerialiser : public NodeSerialiser
 		return NodeSerialiser::childNeedsConstruction( child, serialisation );
 	}
 
-	std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const override
+	std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, Serialisation &serialisation ) const override
 	{
 		std::string result = NodeSerialiser::postConstructor( graphComponent, identifier, serialisation );
 
@@ -129,6 +129,7 @@ class BoxIOSerialiser : public NodeSerialiser
 
 		// Add a call to `setup()` to recreate the plugs.
 
+		/// \todo Avoid creating a temporary plug.
 		PlugPtr plug = boxIO->plug()->createCounterpart( boxIO->plug()->getName(), Plug::In );
 		plug->setFlags( Plug::Dynamic, false );
 
@@ -138,7 +139,7 @@ class BoxIOSerialiser : public NodeSerialiser
 		return result;
 	}
 
-	std::string postScript( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const override
+	std::string postScript( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, Serialisation &serialisation ) const override
 	{
 		std::string result = NodeSerialiser::postScript( graphComponent, identifier, serialisation );
 
@@ -200,6 +201,18 @@ PlugPtr promotedPlug( BoxIO &b )
 	return b.promotedPlug();
 }
 
+PlugPtr promote( Plug &plug )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return BoxIO::promote( &plug );
+}
+
+void insert( Box &box )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	BoxIO::insert( &box );
+}
+
 DependencyNodePtr acquireProcessor( EditScope &e, const std::string &type, bool createIfNecessary )
 {
 	IECorePython::ScopedGILRelease gilRelease;
@@ -248,39 +261,38 @@ namespace
 
 struct ReferenceLoadedSlotCaller
 {
-	boost::signals::detail::unusable operator()( boost::python::object slot, ReferencePtr r )
+	void operator()( boost::python::object slot, ReferencePtr r )
 	{
 		try
 		{
 			slot( r );
 		}
-		catch( const error_already_set &e )
+		catch( const error_already_set & )
 		{
 			IECorePython::ExceptionAlgo::translatePythonException();
 		}
-		return boost::signals::detail::unusable();
 	}
 };
 
 class ReferenceSerialiser : public NodeSerialiser
 {
 
-	std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const override
+	std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, Serialisation &serialisation ) const override
 	{
 		const Reference *r = static_cast<const Reference *>( graphComponent );
 
-		const std::string &fileName = r->fileName();
+		const std::filesystem::path &fileName = r->fileName();
 		if( fileName.empty() )
 		{
 			return "";
 		};
 
-		return identifier + ".load( \"" + fileName + "\" )\n";
+		return identifier + ".load( \"" + fileName.generic_string() + "\" )\n";
 	}
 
 };
 
-void load( Reference &r, const std::string &f )
+void load( Reference &r, const std::filesystem::path &f )
 {
 	IECorePython::ScopedGILRelease gilRelease;
 	r.load( f );
@@ -290,10 +302,10 @@ void load( Reference &r, const std::string &f )
 
 void GafferModule::bindSubGraph()
 {
-	typedef DependencyNodeWrapper<SubGraph> SubGraphWrapper;
+	using SubGraphWrapper = DependencyNodeWrapper<SubGraph>;
 	DependencyNodeClass<SubGraph, SubGraphWrapper>();
 
-	typedef DependencyNodeWrapper<Box> BoxWrapper;
+	using BoxWrapper = DependencyNodeWrapper<Box>;
 
 	DependencyNodeClass<Box, BoxWrapper>()
 		.def( "canPromotePlug", &Box::canPromotePlug, ( arg( "descendantPlug" ) ) )
@@ -312,9 +324,9 @@ void GafferModule::bindSubGraph()
 		.def( "setupPromotedPlug", &setupPromotedPlug )
 		.def( "plug", &plug )
 		.def( "promotedPlug", &promotedPlug )
-		.def( "promote", &BoxIO::promote, return_value_policy<CastToIntrusivePtr>() )
+		.def( "promote", &promote )
 		.staticmethod( "promote" )
-		.def( "insert", &BoxIO::insert )
+		.def( "insert", &insert )
 		.staticmethod( "insert" )
 		.def( "canInsert", &BoxIO::canInsert )
 		.staticmethod( "canInsert" )
@@ -330,6 +342,7 @@ void GafferModule::bindSubGraph()
 		.def( "fileName", &Reference::fileName, return_value_policy<copy_const_reference>() )
 		.def( "referenceLoadedSignal", &Reference::referenceLoadedSignal, return_internal_reference<1>() )
 		.def( "hasMetadataEdit", &Reference::hasMetadataEdit )
+		.def( "isChildEdit", &Reference::isChildEdit )
 	;
 
 	SignalClass<Reference::ReferenceLoadedSignal, DefaultSignalCaller<Reference::ReferenceLoadedSignal>, ReferenceLoadedSlotCaller >( "ReferenceLoadedSignal" );

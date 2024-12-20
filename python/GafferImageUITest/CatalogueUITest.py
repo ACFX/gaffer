@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import os
+
 import Gaffer
 import GafferImage
 import GafferUI
@@ -45,15 +47,26 @@ import IECore
 
 class CatalogueUITest( GafferUITest.TestCase ) :
 
+	def tearDown( self ) :
+
+		# Clear the file cache to prevent Windows from refusing to delete open files,
+		# then reset it to the original value to allow caching within subsequent tests.
+		fLimit = GafferImage.OpenImageIOReader.getOpenFilesLimit()
+		GafferImage.OpenImageIOReader.setOpenFilesLimit( 0 )
+		GafferImage.OpenImageIOReader.setOpenFilesLimit( fLimit )
+
+		GafferUITest.TestCase.tearDown( self )
+
 	def testStandardColumns( self ) :
 
 		self.assertTrue( "Status" in CatalogueUI.registeredColumns() )
 		self.assertTrue( "Name" in CatalogueUI.registeredColumns() )
+		self.assertTrue( "Output Index" in CatalogueUI.registeredColumns() )
 
 		c = GafferImage.Catalogue()
 		self.assertEqual(
 			Gaffer.Metadata.value( c["imageIndex"], "catalogue:columns" ),
-			IECore.StringVectorData( [ "Status", "Name" ] )
+			IECore.StringVectorData( [ "Status", "Output Index", "Name" ] )
 		)
 
 	def testBoxedCatalogue( self ) :
@@ -97,72 +110,73 @@ class CatalogueUITest( GafferUITest.TestCase ) :
 
 	def testImageHeaderColumns( self ) :
 
-		class MockImagePlug() :
+		script = Gaffer.ScriptNode()
 
-			def __init__( self, metadata = {} ) :
-				self.__metadata = metadata
+		script["constant"] = GafferImage.Constant()
 
-			def metadata( self ) :
-				return self.__metadata
+		script["metadata"] = GafferImage.ImageMetadata()
+		script["metadata"]["in"].setInput( script["constant"]["out"] )
+		script["metadata"]["metadata"].addChild( Gaffer.NameValuePlug( "gaffer:context:shot", "G100" ) )
+		script["metadata"]["metadata"].addChild( Gaffer.NameValuePlug( "gaffer:context:sequence", "G" ) )
+		script["metadata"]["metadata"].addChild( Gaffer.NameValuePlug( "customHeaderA", "A" ) )
+		script["metadata"]["metadata"].addChild( Gaffer.NameValuePlug( "customHeaderB", "B" ) )
 
-			def mockNode( self ) :
-				return { "out" : self }
+		script["imageWriter"] = GafferImage.ImageWriter()
+		script["imageWriter"]["in"].setInput( script["metadata"]["out"] )
+		script["imageWriter"]["fileName"].setValue( self.temporaryDirectory() / "test.exr" )
+		script["imageWriter"]["task"].execute()
 
-		mockPlug = MockImagePlug( {
-			"gaffer:context:shot" : "G100",
-			"gaffer:context:sequence" : "G",
-			"customHeaderA" : "A",
-			"customHeaderB": "B"
-		} )
+		script["catalogue"] = GafferImage.Catalogue()
+		script["catalogue"]["images"].addChild( GafferImage.Catalogue.Image.load( script["imageWriter"]["fileName"].getValue() ) )
 
-		catalogue = mockPlug.mockNode()
+		from GafferImageUI.CatalogueUI import _ImagesPath
+		path = _ImagesPath( script["catalogue"]["images"], "/test" )
 
 		# Header value provider
 
 		c = CatalogueUI.ImageMetadataColumn( "Custom A", "customHeaderA" )
-		self.assertEqual( c.value( None, catalogue ), "A" )
+		self.assertEqual( c.cellData( path, None ).value, "A" )
 
 		c = CatalogueUI.ImageMetadataColumn( "Custom C", "customHeaderC" )
-		self.assertEqual( c.value( None, catalogue ), None )
+		self.assertEqual( c.cellData( path, None ).value, None )
 
 		c = CatalogueUI.ImageMetadataColumn( "Custom A", [ "customHeaderA" ] )
-		self.assertEqual( c.value( None, catalogue ), "A" )
+		self.assertEqual( c.cellData( path, None ).value, "A" )
 
 		c = CatalogueUI.ImageMetadataColumn( "Custom A", "customHeaderA", "X" )
-		self.assertEqual( c.value( None, catalogue ), "A" )
+		self.assertEqual( c.cellData( path, None ).value, "A" )
 
 		c = CatalogueUI.ImageMetadataColumn( "Custom C", "customHeaderC", "C" )
-		self.assertEqual( c.value( None, catalogue ), "C" )
+		self.assertEqual( c.cellData( path, None ).value, "C" )
 
 		c = CatalogueUI.ImageMetadataColumn( "Custom", [ "customHeaderC", "customHeaderB", "customHeaderA" ] )
-		self.assertEqual( c.value( None, catalogue ), "B" )
+		self.assertEqual( c.cellData( path, None ).value, "B" )
 
 		c = CatalogueUI.ImageMetadataColumn( "Custom", [ "customHeaderC", "customHeaderD" ], "X"  )
-		self.assertEqual( c.value( None, catalogue ), "X" )
+		self.assertEqual( c.cellData( path, None ).value, "X" )
 
 		# Context value provider
 
 		c = CatalogueUI.ContextVariableColumn( "Shot", "shot" )
-		self.assertEqual( c.value( None, catalogue ), "G100" )
+		self.assertEqual( c.cellData( path, None ).value, "G100" )
 
 		c = CatalogueUI.ContextVariableColumn( "Layer", "layer" )
-		self.assertEqual( c.value( None, catalogue ), None )
+		self.assertEqual( c.cellData( path, None ).value, None )
 
 		c = CatalogueUI.ContextVariableColumn( "Shot", [ "shot" ] )
-		self.assertEqual( c.value( None, catalogue ), "G100" )
+		self.assertEqual( c.cellData( path, None ).value, "G100" )
 
 		c = CatalogueUI.ContextVariableColumn( "Shot", "shot", "X" )
-		self.assertEqual( c.value( None, catalogue ), "G100" )
+		self.assertEqual( c.cellData( path, None ).value, "G100" )
 
 		c = CatalogueUI.ContextVariableColumn( "Layer", "layer", "L" )
-		self.assertEqual( c.value( None, catalogue ), "L" )
+		self.assertEqual( c.cellData( path, None ).value, "L" )
 
 		c = CatalogueUI.ContextVariableColumn( "Layer", [ "layer", "shot", "sequence" ] )
-		self.assertEqual( c.value( None, catalogue ), "G100" )
+		self.assertEqual( c.cellData( path, None ).value, "G100" )
 
 		c = CatalogueUI.ContextVariableColumn( "Layer", [ "subLayer", "layer" ], "X"  )
-		self.assertEqual( c.value( None, catalogue ), "X" )
+		self.assertEqual( c.cellData( path, None ).value, "X" )
 
 if __name__ == "__main__":
 	unittest.main()
-

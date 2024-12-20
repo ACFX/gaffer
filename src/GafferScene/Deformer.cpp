@@ -43,7 +43,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Deformer );
+GAFFER_NODE_DEFINE_TYPE( Deformer );
 
 size_t Deformer::g_firstPlugIndex = 0;
 
@@ -65,6 +65,7 @@ void Deformer::init()
 	addChild( new BoolPlug( "adjustBounds", Plug::In, true ) );
 	// Remove pass-through created by base class
 	outPlug()->boundPlug()->setInput( nullptr );
+	outPlug()->childBoundsPlug()->setFlags( Plug::AcceptsDependencyCycles, true );
 }
 
 Deformer::~Deformer()
@@ -85,7 +86,15 @@ void Deformer::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outpu
 {
 	ObjectProcessor::affects( input, outputs );
 
-	if( input == outPlug()->objectPlug() || input == inPlug()->boundPlug() || input == adjustBoundsPlug() )
+	if(
+		input == adjustBoundsPlug() ||
+		input == filterPlug() ||
+		affectsProcessedObjectBound( input ) ||
+		input == inPlug()->objectPlug() ||
+		input == outPlug()->childBoundsPlug() ||
+		input == inPlug()->childBoundsPlug() ||
+		input == inPlug()->boundPlug()
+	)
 	{
 		outputs.push_back( outPlug()->boundPlug() );
 	}
@@ -94,6 +103,21 @@ void Deformer::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outpu
 bool Deformer::adjustBounds() const
 {
 	return adjustBoundsPlug()->getValue();
+}
+
+bool Deformer::affectsProcessedObjectBound( const Gaffer::Plug *input ) const
+{
+	return input == outPlug()->objectPlug();
+}
+
+void Deformer::hashProcessedObjectBound( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	outPlug()->objectPlug()->hash( h );
+}
+
+Imath::Box3f Deformer::computeProcessedObjectBound( const ScenePath &path, const Gaffer::Context *context ) const
+{
+	return SceneAlgo::bound( outPlug()->objectPlug()->getValue().get() );
 }
 
 void Deformer::hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
@@ -112,7 +136,7 @@ void Deformer::hashBound( const ScenePath &path, const Gaffer::Context *context,
 			ObjectProcessor::hashBound( path, context, parent, h );
 			if( m & PathMatcher::ExactMatch )
 			{
-				outPlug()->objectPlug()->hash( h );
+				hashProcessedObjectBound( path, context, h );
 			}
 			else
 			{
@@ -121,11 +145,11 @@ void Deformer::hashBound( const ScenePath &path, const Gaffer::Context *context,
 
 			if( m & PathMatcher::DescendantMatch )
 			{
-				h.append( outPlug()->childBoundsHash() );
+				outPlug()->childBoundsPlug()->hash( h );
 			}
 			else
 			{
-				h.append( inPlug()->childBoundsHash() );
+				inPlug()->childBoundsPlug()->hash( h );
 			}
 			return;
 		}
@@ -159,10 +183,7 @@ Imath::Box3f Deformer::computeBound( const ScenePath &path, const Gaffer::Contex
 			if( m & PathMatcher::ExactMatch )
 			{
 				// Get bounds from deformed output object.
-				/// \todo Some derived classes may be able to compute an output bound
-				/// for the object without computing the full deformation. We could add
-				/// virtual methods to allow that.
-				result.extendBy( SceneAlgo::bound( outPlug()->objectPlug()->getValue().get() ) );
+				result.extendBy( computeProcessedObjectBound( path, context ) );
 			}
 			else
 			{
@@ -171,11 +192,11 @@ Imath::Box3f Deformer::computeBound( const ScenePath &path, const Gaffer::Contex
 
 			if( m & PathMatcher::DescendantMatch )
 			{
-				result.extendBy( outPlug()->childBounds() );
+				result.extendBy( outPlug()->childBoundsPlug()->getValue() );
 			}
 			else
 			{
-				result.extendBy( inPlug()->childBounds() );
+				result.extendBy( inPlug()->childBoundsPlug()->getValue() );
 			}
 			return result;
 		}

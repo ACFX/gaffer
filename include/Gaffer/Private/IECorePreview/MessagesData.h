@@ -32,8 +32,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef IECOREPREVIEW_MESSAGESDATA_H
-#define IECOREPREVIEW_MESSAGESDATA_H
+#pragma once
 
 #include "Gaffer/Private/IECorePreview/Messages.h"
 
@@ -49,10 +48,7 @@ IECORE_DECLARE_TYPEDDATA( MessagesData, IECorePreview::Messages, void, IECore::S
 namespace IECorePreview
 {
 
-typedef IECore::MessagesData MessagesData;
+using MessagesData = IECore::MessagesData;
 IE_CORE_DECLAREPTR( MessagesData );
 
 } // namespace IECorePreview
-
-
-#endif // IECOREPREVIEW_MESSAGESDATA_H

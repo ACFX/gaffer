@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFER_TYPEIDS_H
-#define GAFFER_TYPEIDS_H
+#pragma once
 
 namespace Gaffer
 {
@@ -139,11 +138,26 @@ enum TypeId
 	ShufflesPlugTypeId = 110092,
 	EditScopeTypeId = 110093,
 	MessagesDataTypeId = 110094,
+	M33fVectorDataPlugTypeId = 110095,
+	ScriptNodeFocusSetTypeId = 110096,
+	AnimationKeyTypeId = 110097,
+	RandomChoiceTypeId = 110098,
+	ContextQueryTypeId = 110099,
+	TweakPlugTypeId = 110100,
+	TweaksPlugTypeId = 110101,
+	V2fVectorDataPlugTypeId = 110102,
+	V3iVectorDataPlugTypeId = 110103,
+	ContextVariableTweaksTypeId = 110104,
+	HiddenFilePathFilterTypeId = 110105,
+	Color4fVectorDataPlugTypeId = 110106,
+	OptionalValuePlugTypeId = 110107,
+	CollectTypeId = 110108,
+	Box2fVectorDataPlugTypeId = 110109,
+	PatternMatchTypeId = 110110,
+	Int64VectorDataPlugTypeId = 110111,
 
 	LastTypeId = 110159,
 
 };
 
 } // namespace Gaffer
-
-#endif // GAFFER_TYPEIDS_H

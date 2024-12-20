@@ -56,7 +56,10 @@ Gaffer.Metadata.registerNode(
 			Defines the scene used for the shader preview.
 			""",
 			"plugValueWidget:type", "GafferSceneUI.ShaderViewUI._ScenePlugValueWidget",
+		],
 
+		"lutGPU" : [
+			"divider", True
 		],
 
 	}
@@ -81,10 +84,6 @@ class _ScenePlugValueWidget( GafferUI.PlugValueWidget ) :
 	def hasLabel( self ) :
 
 		return True
-
-	def _updateFromPlug( self ) :
-
-		pass
 
 	def __menuDefinition( self ) :
 
@@ -131,7 +130,7 @@ class _SettingsWindow( GafferUI.Window ) :
 				GafferUI.Spacer( imath.V2i( 0 ), parenting = { "expand" : True } )
 
 		self.__shaderView = shaderView
-		shaderView.sceneChangedSignal().connect( Gaffer.WeakMethod( self.__sceneChanged ), scoped = False )
+		shaderView.sceneChangedSignal().connect( Gaffer.WeakMethod( self.__sceneChanged ) )
 		self.__updateNodeUI()
 
 	def __updateNodeUI( self ) :

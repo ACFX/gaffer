@@ -37,7 +37,6 @@
 
 import unittest
 import imath
-import six
 
 import IECore
 
@@ -155,13 +154,21 @@ class CompoundDataPlugTest( GafferTest.TestCase ) :
 		self.assertEqual( d, IECore.M44fVectorData( [ imath.M44f() * x for x in range( 1, 5 ) ] ) )
 		self.assertEqual( n, "f" )
 
-		m7 = Gaffer.NameValuePlug( "d", IECore.V2iVectorData( [ imath.V2i( x ) for x in range( 1, 5 ) ] ) )
+		m7 = Gaffer.NameValuePlug( "g", IECore.V2iVectorData( [ imath.V2i( x ) for x in range( 1, 5 ) ] ) )
 		p.addChild( m7 )
 		self.assertIsInstance( m7, Gaffer.ValuePlug )
 
 		d, n = p.memberDataAndName( m7 )
 		self.assertEqual( d, IECore.V2iVectorData( [ imath.V2i( x ) for x in range( 1, 5 ) ] ) )
-		self.assertEqual( n, "d" )
+		self.assertEqual( n, "g" )
+
+		m8 = Gaffer.NameValuePlug( "h", IECore.M33fVectorData( [ imath.M33f() * x for x in range( 1, 5 ) ] ) )
+		p.addChild( m8 )
+		self.assertIsInstance( m8, Gaffer.ValuePlug )
+
+		d, n = p.memberDataAndName( m8 )
+		self.assertEqual( d, IECore.M33fVectorData( [ imath.M33f() * x for x in range( 1, 5 ) ] ) )
+		self.assertEqual( n, "h" )
 
 	def testImathVectorData( self ) :
 
@@ -340,6 +347,15 @@ class CompoundDataPlugTest( GafferTest.TestCase ) :
 
 		self.assertEqual( d1, d2 )
 
+	def testAddV3fMember( self ) :
+
+		p = Gaffer.CompoundDataPlug()
+
+		p.addMembers( IECore.CompoundData( { "v" : imath.V3f( 1, 2, 3 ) } ) )
+		self.assertEqual( len( p ), 1 )
+		self.assertIsInstance( p[0]["value"], Gaffer.V3fPlug )
+		self.assertEqual( p[0]["value"].defaultValue(), imath.V3f( 1, 2, 3 ) )
+
 	def testBoxTypes( self ) :
 
 		p = Gaffer.CompoundDataPlug()
@@ -481,11 +497,11 @@ class CompoundDataPlugTest( GafferTest.TestCase ) :
 		p = Gaffer.CompoundDataPlug()
 		p["test"] = Gaffer.NameValuePlug( "name", Gaffer.Plug() )
 
-		with six.assertRaisesRegex( self, RuntimeError, "Not a ValuePlug" ) :
+		with self.assertRaisesRegex( RuntimeError, "Not a ValuePlug" ) :
 			p.hash()
 
 		d = IECore.CompoundData()
-		with six.assertRaisesRegex( self, RuntimeError, "Not a ValuePlug" ) :
+		with self.assertRaisesRegex( RuntimeError, "Not a ValuePlug" ) :
 			p.fillCompoundData( d )
 
 if __name__ == "__main__":

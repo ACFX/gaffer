@@ -34,10 +34,7 @@
 #
 ##########################################################################
 
-import six
-import types
-
-import IECore
+import enum
 
 import Gaffer
 import GafferUI
@@ -48,10 +45,10 @@ from Qt import QtWidgets
 
 class BoolWidget( GafferUI.Widget ) :
 
-	DisplayMode = IECore.Enum.create( "CheckBox", "Switch", "Tool" )
+	DisplayMode = enum.Enum( "DisplayMode", [ "CheckBox", "Switch", "Tool" ] )
 	# True/False states are deliberately omitted from this enum;
 	# For backwards compatibility we use `bool` values instead.
-	State = IECore.Enum.create( "Indeterminate" )
+	State = enum.Enum( "State", [ "Indeterminate" ] )
 
 	def __init__( self, text="", checked=False, displayMode=DisplayMode.CheckBox, image = None, **kw ) :
 
@@ -77,8 +74,12 @@ class BoolWidget( GafferUI.Widget ) :
 
 	def setImage( self, image ) :
 
-		if isinstance( image, six.string_types ) :
+		if isinstance( image, str ) :
+			# Avoid our image getting parented to the wrong thing
+			# if our caller is in a `with container` block.
+			GafferUI.Widget._pushParent( None )
 			self.__image = GafferUI.Image( image )
+			GafferUI.Widget._popParent()
 		else :
 			assert( isinstance( image, ( GafferUI.Image, type( None ) ) ) )
 			self.__image = image
@@ -115,7 +116,7 @@ class BoolWidget( GafferUI.Widget ) :
 
 	def setDisplayMode( self, displayMode ) :
 
-		self._qtWidget().setProperty( "gafferDisplayMode", str( displayMode ) )
+		self._qtWidget().setProperty( "gafferDisplayMode", displayMode.name )
 		self._qtWidget().setHitMode(
 			_CheckBox.HitMode.Button if displayMode == self.DisplayMode.Tool else _CheckBox.HitMode.CheckBox
 		)
@@ -156,7 +157,7 @@ class BoolWidget( GafferUI.Widget ) :
 
 class _CheckBox( QtWidgets.QCheckBox ) :
 
-	HitMode = IECore.Enum.create( "Button", "CheckBox" )
+	HitMode = enum.Enum( "HitMode", [ "Button", "CheckBox" ] )
 
 	def __init__( self, text, parent = None ) :
 

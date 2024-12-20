@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_WIREFRAME_H
-#define GAFFERSCENE_WIREFRAME_H
+#pragma once
 
 #include "GafferScene/Deformer.h"
 
@@ -54,10 +53,10 @@ class GAFFERSCENE_API Wireframe : public Deformer
 
 	public :
 
-		Wireframe( const std::string &name=defaultName<Wireframe>() );
+		explicit Wireframe( const std::string &name=defaultName<Wireframe>() );
 		~Wireframe() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Wireframe, WireframeTypeId, Deformer );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Wireframe, WireframeTypeId, Deformer );
 
 		Gaffer::StringPlug *positionPlug();
 		const Gaffer::StringPlug *positionPlug() const;
@@ -81,5 +80,3 @@ class GAFFERSCENE_API Wireframe : public Deformer
 IE_CORE_DECLAREPTR( Wireframe )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_WIREFRAME_H

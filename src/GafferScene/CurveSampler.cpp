@@ -45,7 +45,7 @@ using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CurveSampler );
+GAFFER_NODE_DEFINE_TYPE( CurveSampler );
 
 size_t CurveSampler::g_firstPlugIndex = 0;
 
@@ -103,8 +103,8 @@ PrimitiveSampler::SamplingFunction CurveSampler::computeSamplingFunction( const 
 	const std::string curveIndex = curveIndexPlug()->getValue();
 	const std::string v = vPlug()->getValue();
 
-	boost::optional<PrimitiveVariable::IndexedView<int>> curveIndexView;
-	boost::optional<PrimitiveVariable::IndexedView<float>> vView;
+	std::optional<PrimitiveVariable::IndexedView<int>> curveIndexView;
+	std::optional<PrimitiveVariable::IndexedView<float>> vView;
 
 	if( !curveIndex.empty() )
 	{
@@ -152,4 +152,3 @@ PrimitiveSampler::SamplingFunction CurveSampler::computeSamplingFunction( const 
 		);
 	};
 }
-

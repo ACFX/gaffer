@@ -42,7 +42,7 @@
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( FlatImageProcessor );
+GAFFER_NODE_DEFINE_TYPE( FlatImageProcessor );
 
 FlatImageProcessor::FlatImageProcessor( const std::string &name )
 	:	ImageProcessor( name )
@@ -89,13 +89,16 @@ void FlatImageProcessor::hashDeep( const GafferImage::ImagePlug *parent, const G
 	ImageProcessor::hashDeep( parent, context, h );
 	if( inPlugs() )
 	{
-		for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+		for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 		{
 			// We ignore unconnected inputs when determining the hash - this is the correct
 			// behaviour for merge, and hopefully any other deep nodes that use inPlugs()
 			if( (*it)->getInput<ValuePlug>() )
 			{
-				h.append( (*it)->deepPlug()->hash() );
+				if( ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) )
+				{
+					h.append( (*it)->deepPlug()->hash() );
+				}
 			}
 		}
 	}
@@ -103,7 +106,10 @@ void FlatImageProcessor::hashDeep( const GafferImage::ImagePlug *parent, const G
 	{
 		// We need to append to the node hash, rather than just overriding with the upstream value,
 		// so that we can't reuse the plug value from upstream, and have to call compute()
-		h.append( inPlug()->deepPlug()->hash() );
+		if( ImageAlgo::viewIsValid( context, inPlug()->viewNames()->readable() ) )
+		{
+			h.append( inPlug()->deepPlug()->hash() );
+		}
 	}
 }
 
@@ -112,9 +118,12 @@ bool FlatImageProcessor::computeDeep( const Gaffer::Context *context, const Imag
 	const ImagePlug *badInput = nullptr;
 	if( inPlugs() )
 	{
-		for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+		for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 		{
-			if( (*it)->deepPlug()->getValue() )
+			if(
+				ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) &&
+				(*it)->deepPlug()->getValue()
+			)
 			{
 				badInput = it->get();
 			}
@@ -122,7 +131,10 @@ bool FlatImageProcessor::computeDeep( const Gaffer::Context *context, const Imag
 	}
 	else
 	{
-		if( inPlug()->deepPlug()->getValue() )
+		if(
+			ImageAlgo::viewIsValid( context, inPlug()->viewNames()->readable() ) &&
+			inPlug()->deepPlug()->getValue()
+		)
 		{
 			badInput = inPlug();
 		}

@@ -39,13 +39,14 @@
 #include "GafferUI/PlugAdder.h"
 
 #include "Gaffer/ArrayPlug.h"
+#include "Gaffer/MetadataAlgo.h"
 #include "Gaffer/NameSwitch.h"
 #include "Gaffer/NameValuePlug.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Switch.h"
 #include "Gaffer/UndoScope.h"
 
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -72,7 +73,7 @@ class SwitchPlugAdder : public PlugAdder
 
 		bool canCreateConnection( const Plug *endpoint ) const override
 		{
-			return PlugAdder::canCreateConnection( endpoint );
+			return PlugAdder::canCreateConnection( endpoint ) && !Gaffer::MetadataAlgo::readOnly( m_switch.get() );
 		}
 
 		void createConnection( Plug *endpoint ) override
@@ -148,7 +149,7 @@ struct Registration
 
 	Registration()
 	{
-		NoduleLayout::registerCustomGadget( "GafferUI.SwitchUI.PlugAdder", boost::bind( &create, ::_1 ) );
+		NoduleLayout::registerCustomGadget( "GafferUI.SwitchUI.PlugAdder", &create );
 	}
 
 	private :

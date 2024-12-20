@@ -50,7 +50,7 @@ class MenuBar( GafferUI.Widget ) :
 
 	def __init__( self, definition, **kw ) :
 
-		menuBar = QtWidgets.QMenuBar()
+		menuBar = _MenuBar()
 		menuBar.setSizePolicy( QtWidgets.QSizePolicy( QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed ) )
 		menuBar.setNativeMenuBar( False )
 
@@ -59,8 +59,8 @@ class MenuBar( GafferUI.Widget ) :
 		self.__shortcutEventFilter = None
 		self.definition = definition
 
-		self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ), scoped = False )
-		self.parentChangedSignal().connect( Gaffer.WeakMethod( self.__parentChanged ), scoped = False )
+		self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ) )
+		self.parentChangedSignal().connect( Gaffer.WeakMethod( self.__parentChanged ) )
 		self.__setupShortcutEventFilter()
 
 	## Adds a listener to the supplied gaffer widget to action any menu items
@@ -220,3 +220,30 @@ class _ShortcutEventFilter( QtCore.QObject ) :
 					return a
 
 		return None
+
+## Tablet support
+#
+# Qt creates synthetic mouse events for tablet interaction. The following
+# commit intended to better support touch screens inadvertently causes tablet
+# mouse-move events (source MouseEventSynthesizedByQt) to be ignored by the
+# menu bar.
+#
+#   https://code.qt.io/cgit/qt/qtbase.git/commit/src/widgets/widgets?id=c5307203f5c0b0e588cc93e70764c090dd4c2ce0
+#
+# This prevents hover interaction with the menu bar. Work around this by
+# creating a new, non-synthesized event.
+#
+# \todo Remove once https://bugreports.qt.io/browse/QTBUG-77679 is resolved.
+
+class _MenuBar( QtWidgets.QMenuBar ) :
+
+	def mouseMoveEvent( self, event ) :
+
+		if event.source() == QtCore.Qt.MouseEventSource.MouseEventSynthesizedByQt :
+			event = QtGui.QMouseEvent(
+				event.type(), event.localPos(), event.windowPos(), event.screenPos(),
+				event.button(), event.buttons(), event.modifiers(),
+				QtCore.Qt.MouseEventSource.MouseEventNotSynthesized
+			)
+
+		QtWidgets.QMenuBar.mouseMoveEvent( self, event )

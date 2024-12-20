@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_RANKFILTER_H
-#define GAFFERIMAGE_RANKFILTER_H
+#pragma once
 
 #include "GafferImage/FlatImageProcessor.h"
 
@@ -53,7 +52,7 @@ class GAFFERIMAGE_API RankFilter : public FlatImageProcessor
 
 		~RankFilter() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::RankFilter, RankFilterTypeId, FlatImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::RankFilter, RankFilterTypeId, FlatImageProcessor );
 
 		Gaffer::V2iPlug *radiusPlug();
 		const Gaffer::V2iPlug *radiusPlug() const;
@@ -78,7 +77,7 @@ class GAFFERIMAGE_API RankFilter : public FlatImageProcessor
 			DilateRank
 		};
 
-		RankFilter( const std::string &name=defaultName<RankFilter>(), Mode mode=MedianRank );
+		explicit RankFilter( const std::string &name=defaultName<RankFilter>(), Mode mode=MedianRank );
 
 		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
@@ -104,5 +103,3 @@ class GAFFERIMAGE_API RankFilter : public FlatImageProcessor
 IE_CORE_DECLAREPTR( RankFilter );
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_RANKFILTER_H

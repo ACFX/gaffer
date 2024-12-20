@@ -43,23 +43,22 @@
 #include "GafferArnold/ArnoldCameraShaders.h"
 #include "GafferArnold/ArnoldColorManager.h"
 #include "GafferArnold/ArnoldDisplacement.h"
+#include "GafferArnold/ArnoldImager.h"
 #include "GafferArnold/ArnoldLight.h"
 #include "GafferArnold/ArnoldMeshLight.h"
 #include "GafferArnold/ArnoldOptions.h"
-#include "GafferArnold/ArnoldRender.h"
 #include "GafferArnold/ArnoldShader.h"
 #include "GafferArnold/ArnoldVDB.h"
 #include "GafferArnold/ArnoldLightFilter.h"
-#include "GafferArnold/InteractiveArnoldRender.h"
-#include "GafferArnold/Private/IECoreArnoldPreview/ShaderNetworkAlgo.h"
 
 #include "GafferDispatchBindings/TaskNodeBinding.h"
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
+#include "fmt/format.h"
+
 using namespace boost::python;
 using namespace GafferArnold;
-using namespace IECoreArnoldPreview;
 
 namespace
 {
@@ -73,91 +72,20 @@ void loadColorManagerWrapper( ArnoldColorManager &c, const std::string &name, bo
 class ArnoldColorManagerSerialiser : public GafferBindings::NodeSerialiser
 {
 
-	std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const GafferBindings::Serialisation &serialisation ) const override
+	std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, GafferBindings::Serialisation &serialisation ) const override
 	{
 		std::string result = GafferBindings::NodeSerialiser::postConstructor( graphComponent, identifier, serialisation );
 
 		const std::string name = static_cast<const ArnoldColorManager *>( graphComponent )->getChild<ArnoldShader>( "__shader" )->namePlug()->getValue();
 		if( name.size() )
 		{
-			result += boost::str( boost::format( "\n%s.loadColorManager( \"%s\" )\n" ) % identifier % name );
+			result += fmt::format( "\n{}.loadColorManager( \"{}\" )\n", identifier, name );
 		}
 
 		return result;
 	}
 
 };
-
-void flushCaches( int flags )
-{
-	IECorePython::ScopedGILRelease gilRelease;
-	InteractiveArnoldRender::flushCaches( flags );
-}
-
-boost::python::object atNodeToPythonObject( AtNode *node )
-{
-	if( !node )
-	{
-		return object();
-	}
-
-	object ctypes = import( "ctypes" );
-	object arnold = import( "arnold" );
-
-	object atNodeType = arnold.attr( "AtNode" );
-	object pointerType = ctypes.attr( "POINTER" )( atNodeType );
-	object converted = ctypes.attr( "cast" )( (size_t)node, pointerType );
-	return converted;
-}
-
-AtNode *atNodeFromPythonObject( object o )
-{
-	object ctypes = import( "ctypes" );
-	object ctypesPointer = ctypes.attr( "POINTER" );
-	object arnoldAtNode = import( "arnold" ).attr( "AtNode" );
-	object atNodePtrType = ctypesPointer( arnoldAtNode );
-
-	if( !PyObject_IsInstance( o.ptr(), atNodePtrType.ptr() ) )
-	{
-		PyErr_SetString( PyExc_TypeError, "Expected an AtNode" );
-		throw_error_already_set();
-	}
-
-	object oContents = o.attr( "contents" );
-	object pythonAddress = ctypes.attr( "addressof" )( oContents );
-	const size_t address = extract<size_t>( pythonAddress );
-	return reinterpret_cast<AtNode *>( address );
-}
-
-list shaderNetworkAlgoConvert( const IECoreScene::ShaderNetwork *shaderNetwork, const std::string &name )
-{
-	std::vector<AtNode *> nodes = ShaderNetworkAlgo::convert( shaderNetwork, name );
-	list result;
-	for( const auto &n : nodes )
-	{
-		result.append( atNodeToPythonObject( n ) );
-	}
-	return result;
-}
-
-bool shaderNetworkAlgoUpdate( list pythonNodes, const IECoreScene::ShaderNetwork *shaderNetwork )
-{
-	std::vector<AtNode *> nodes;
-	for( size_t i = 0, l = len( pythonNodes ); i < l; ++i )
-	{
-		nodes.push_back( atNodeFromPythonObject( pythonNodes[i] ) );
-	}
-
-	bool result = ShaderNetworkAlgo::update( nodes, shaderNetwork );
-
-	del( pythonNodes[slice()] );
-	for( const auto &n : nodes )
-	{
-		pythonNodes.append( atNodeToPythonObject( n ) );
-	}
-
-	return result;
-}
 
 } // namespace
 
@@ -186,21 +114,13 @@ BOOST_PYTHON_MODULE( _GafferArnold )
 	GafferBindings::DependencyNodeClass<ArnoldCameraShaders>();
 	GafferBindings::DependencyNodeClass<ArnoldMeshLight>();
 	GafferBindings::DependencyNodeClass<ArnoldAOVShader>();
-	GafferBindings::NodeClass<InteractiveArnoldRender>()
-		.def( "flushCaches", &flushCaches )
-		.staticmethod( "flushCaches" )
-	;
-	GafferDispatchBindings::TaskNodeClass<ArnoldRender>();
 
-	object ieCoreArnoldPreviewModule( borrowed( PyImport_AddModule( "GafferArnold.IECoreArnoldPreview" ) ) );
-	scope().attr( "IECoreArnoldPreview" ) = ieCoreArnoldPreviewModule;
-	scope ieCoreArnoldPreviewScope( ieCoreArnoldPreviewModule );
-
-	object shaderNetworkAlgoModule( borrowed( PyImport_AddModule( "GafferArnold.IECoreArnoldPreview.ShaderNetworkAlgo" ) ) );
-	scope().attr( "ShaderNetworkAlgo" ) = shaderNetworkAlgoModule;
-	scope shaderNetworkAlgoScope( shaderNetworkAlgoModule );
-
-	def( "convert", &shaderNetworkAlgoConvert );
-	def( "update", &shaderNetworkAlgoUpdate );
-
+	{
+		scope s = GafferBindings::DependencyNodeClass<ArnoldImager>();
+		enum_<ArnoldImager::Mode>( "Mode" )
+			.value( "Replace", ArnoldImager::Mode::Replace )
+			.value( "InsertFirst", ArnoldImager::Mode::InsertFirst )
+			.value( "InsertLast", ArnoldImager::Mode::InsertLast )
+		;
+	}
 }

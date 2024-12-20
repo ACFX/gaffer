@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERARNOLD_ARNOLDCAMERASHADERS_H
-#define GAFFERARNOLD_ARNOLDCAMERASHADERS_H
+#pragma once
 
 #include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
@@ -54,10 +53,10 @@ class GAFFERARNOLD_API ArnoldCameraShaders : public GafferScene::Shader
 
 	public :
 
-		ArnoldCameraShaders( const std::string &name=defaultName<ArnoldCameraShaders>() );
+		explicit ArnoldCameraShaders( const std::string &name=defaultName<ArnoldCameraShaders>() );
 		~ArnoldCameraShaders() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldCameraShaders, ArnoldCameraShadersTypeId, GafferScene::Shader );
+		GAFFER_NODE_DECLARE_TYPE( GafferArnold::ArnoldCameraShaders, ArnoldCameraShadersTypeId, GafferScene::Shader );
 
 		GafferScene::ShaderPlug *filterMapPlug();
 		const GafferScene::ShaderPlug *filterMapPlug() const;
@@ -85,5 +84,3 @@ class GAFFERARNOLD_API ArnoldCameraShaders : public GafferScene::Shader
 IE_CORE_DECLAREPTR( ArnoldCameraShaders )
 
 } // namespace GafferArnold
-
-#endif // GAFFERARNOLD_ARNOLDCAMERASHADERS_H

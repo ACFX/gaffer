@@ -49,9 +49,11 @@
 #include "IECore/AngleConversion.h"
 #include "IECore/MatrixAlgo.h"
 
-#include "OpenEXR/ImathEuler.h"
-#include "OpenEXR/ImathMatrixAlgo.h"
-#include "OpenEXR/ImathRandom.h"
+#include "Imath/ImathEuler.h"
+#include "Imath/ImathMatrixAlgo.h"
+#include "Imath/ImathRandom.h"
+
+#include "fmt/format.h"
 
 #include <random>
 
@@ -90,7 +92,7 @@ PrimitiveVariable::IndexedView<T> indexedView( const Primitive *inputPrimitive, 
 	if( it == inputPrimitive->variables.end() )
 	{
 		throw IECore::Exception(
-			boost::str( boost::format( "Primitive variable \"%s\" not found" ) % name )
+			fmt::format( "Primitive variable \"{}\" not found", name )
 		);
 	}
 
@@ -99,11 +101,9 @@ PrimitiveVariable::IndexedView<T> indexedView( const Primitive *inputPrimitive, 
 	if( !data )
 	{
 		throw IECore::Exception(
-			boost::str(
-				boost::format( "Primitive variable \"%s\" has wrong type \"%s\" (wanted \"%s\")" )
-					% name
-					% it->second.data->typeName()
-					% DataType::staticTypeName()
+			fmt::format(
+				"Primitive variable \"{}\" has wrong type \"{}\" (wanted \"{}\")",
+				name, it->second.data->typeName(), DataType::staticTypeName()
 			)
 		);
 	}
@@ -121,12 +121,9 @@ PrimitiveVariable::IndexedView<T> indexedView( const Primitive *inputPrimitive, 
 		if( data->readable().size() != spec.size )
 		{
 			throw IECore::Exception(
-				boost::str(
-					boost::format( "Primitive variable \"%s\" has wrong size (%d, but should be %d to match \"%s\")" )
-						% name
-						% data->readable().size()
-						% spec.size
-						% spec.name
+				fmt::format(
+					"Primitive variable \"{}\" has wrong size ({}, but should be {} to match \"{}\")",
+					name, data->readable().size(), spec.size, spec.name
 				)
 			);
 		}
@@ -184,11 +181,11 @@ PrimitiveVariable inQuaternion( const Primitive *inputPrimitive, Primitive *outp
 	{
 		if( xyzw )
 		{
-			quaternions.push_back( Quatf( q.v.z, V3f( q.r, q.v.x, q.v.y ) ) );
+			quaternions.push_back( Orientation::normalizedIfNeeded( Quatf( q.v.z, V3f( q.r, q.v.x, q.v.y ) ) ) );
 		}
 		else
 		{
-			quaternions.push_back( q );
+			quaternions.push_back( Orientation::normalizedIfNeeded( q ) );
 		}
 	}
 
@@ -222,7 +219,7 @@ PrimitiveVariable inAim( const Primitive *inputPrimitive, Primitive *outputPrimi
 {
 	ViewSpec spec;
 
-	using OptionalVector = boost::optional<PrimitiveVariable::IndexedView<V3f>>;
+	using OptionalVector = std::optional<PrimitiveVariable::IndexedView<V3f>>;
 	OptionalVector xAxis, yAxis, zAxis;
 
 	if( xAxisName != "" )
@@ -504,7 +501,7 @@ void randomise( vector<Quatf> &orientations, const V3f &axis, float spreadMax, f
 // Orientation
 //////////////////////////////////////////////////////////////////////////
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Orientation );
+GAFFER_NODE_DEFINE_TYPE( Orientation );
 
 size_t Orientation::g_firstPlugIndex = 0;
 

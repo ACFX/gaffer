@@ -46,16 +46,17 @@
 
 #include "IECoreGL/Selector.h"
 
-#include "OpenEXR/ImathBoxAlgo.h"
+#include "Imath/ImathBoxAlgo.h"
 
 #include "boost/algorithm/string/predicate.hpp"
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 #include "boost/bind/placeholders.hpp"
 
 using namespace GafferUI;
 using namespace Gaffer;
 using namespace IECore;
 using namespace Imath;
+using namespace boost::placeholders;
 using namespace std;
 
 //////////////////////////////////////////////////////////////////////////
@@ -86,7 +87,7 @@ void visitAuxiliaryConnections( const GraphGadget *graphGadget, const NodeGadget
 	/// private plugs for its inputs, and we can ignore all private plugs
 	/// unconditionally.
 	const bool ignorePrivatePlugs = !runTimeCast<const Expression>( dstNode );
-	for( Gaffer::RecursivePlugIterator it( dstNode ); !it.done(); ++it )
+	for( Gaffer::Plug::RecursiveIterator it( dstNode ); !it.done(); ++it )
 	{
 		const Gaffer::Plug *dstPlug = it->get();
 		if( ignorePrivatePlugs && boost::starts_with( dstPlug->getName().c_str(), "__" ) )
@@ -299,7 +300,7 @@ std::string AuxiliaryConnectionsGadget::getToolTip( const IECore::LineSegment3f 
 	return s;
 }
 
-void AuxiliaryConnectionsGadget::doRenderLayer( Layer layer, const Style *style ) const
+void AuxiliaryConnectionsGadget::renderLayer( Layer layer, const Style *style, RenderReason reason ) const
 {
 	if( layer != GraphLayer::Connections )
 	{
@@ -311,6 +312,18 @@ void AuxiliaryConnectionsGadget::doRenderLayer( Layer layer, const Style *style 
 	{
 		renderConnection( c, style );
 	}
+}
+
+unsigned AuxiliaryConnectionsGadget::layerMask() const
+{
+	return (unsigned)GraphLayer::Connections;
+}
+
+Box3f AuxiliaryConnectionsGadget::renderBound() const
+{
+	Box3f b;
+	b.makeInfinite();
+	return b;
 }
 
 void AuxiliaryConnectionsGadget::renderConnection( const AuxiliaryConnection &c, const Style *style ) const
@@ -438,7 +451,7 @@ void AuxiliaryConnectionsGadget::dirtyInputConnections( const NodeGadget *nodeGa
 		return;
 	}
 	m_dirty = true;
-	requestRender();
+	dirty( DirtyType::Render );
 }
 
 void AuxiliaryConnectionsGadget::dirtyOutputConnections( const NodeGadget *nodeGadget )
@@ -459,7 +472,7 @@ void AuxiliaryConnectionsGadget::dirtyOutputConnections( const NodeGadget *nodeG
 		return;
 	}
 	m_dirty = true;
-	requestRender();
+	dirty( DirtyType::Render );
 }
 
 void AuxiliaryConnectionsGadget::updateConnections() const

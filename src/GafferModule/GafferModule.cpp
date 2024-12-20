@@ -40,9 +40,9 @@
 #include "ApplicationRootBinding.h"
 #include "ArrayPlugBinding.h"
 #include "BoxPlugBinding.h"
+#include "CollectBinding.h"
 #include "CompoundDataPlugBinding.h"
 #include "CompoundNumericPlugBinding.h"
-#include "ConnectionBinding.h"
 #include "ContextBinding.h"
 #include "ContextProcessorBinding.h"
 #include "DirtyPropagationScopeBinding.h"
@@ -56,6 +56,7 @@
 #include "NodeAlgoBinding.h"
 #include "NodeBinding.h"
 #include "NumericPlugBinding.h"
+#include "OptionalValuePlugBinding.h"
 #include "ParallelAlgoBinding.h"
 #include "PathBinding.h"
 #include "PathFilterBinding.h"
@@ -66,7 +67,7 @@
 #include "ScriptNodeBinding.h"
 #include "SerialisationBinding.h"
 #include "SetBinding.h"
-#include "SignalBinding.h"
+#include "SignalsBinding.h"
 #include "SplinePlugBinding.h"
 #include "SpreadsheetBinding.h"
 #include "StringPlugBinding.h"
@@ -81,13 +82,21 @@
 #include "NameValuePlugBinding.h"
 #include "ShufflesBinding.h"
 #include "MessagesBinding.h"
+#include "TweakPlugBinding.h"
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
 #include "Gaffer/Backdrop.h"
+#include "Gaffer/PatternMatch.h"
 
 #ifdef __linux__
 #include <sys/prctl.h>
+#endif
+
+#ifdef _MSC_VER
+#include "IECore/MessageHandler.h"
+
+#include "tbb/tbbmalloc_proxy.h"
 #endif
 
 using namespace boost::python;
@@ -106,6 +115,8 @@ bool isDebug()
 	return true;
 #endif
 }
+
+#ifndef _MSC_VER
 
 int g_argc = 0;
 char **g_argv = nullptr;
@@ -166,18 +177,40 @@ void clobberArgv()
 	g_argv[g_argc-1] = c;
 	memset( c, 0, end - c );
 }
+#endif
 
 void nameProcess()
 {
 	// Some things (for instance, `ps` in default mode) look at `argv` to get
 	// the name.
+#ifndef _MSC_VER
 	clobberArgv();
+#endif
 	// Others (for instance, `top` in default mode) use other methods.
 	// Cater to everyone as best we can.
 #ifdef __linux__
 	prctl( PR_SET_NAME, "gaffer", 0, 0, 0 );
 #endif
 }
+
+#ifdef _MSC_VER
+void verifyAllocator()
+{
+
+	char **replacementLog;
+	int replacementStatus = TBB_malloc_replacement_log( &replacementLog );
+
+	if( replacementStatus != 0 )
+	{
+		IECore::msg( IECore::Msg::Warning, "Gaffer", "Failed to install TBB memory allocator. Performance may be degraded." );
+		for( char **logEntry = replacementLog; *logEntry != 0; logEntry++ )
+		{
+			IECore::msg( IECore::Msg::Warning, "Gaffer", *logEntry );
+		}
+	}
+
+}
+#endif
 
 } // namespace
 
@@ -194,8 +227,7 @@ __attribute__( ( section( ".init_array" ) ) ) decltype( storeArgcArgv ) *g_initA
 BOOST_PYTHON_MODULE( _Gaffer )
 {
 
-	bindConnection();
-	bindSignal();
+	bindSignals();
 	bindGraphComponent();
 	bindContext();
 	bindSerialisation();
@@ -240,17 +272,18 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindNodeAlgo();
 	bindShuffles();
 	bindMessages();
+	bindTweakPlugs();
+	bindOptionalValuePlug();
+	bindCollect();
 
 	NodeClass<Backdrop>();
+	DependencyNodeClass<PatternMatch>();
 
 	def( "isDebug", &isDebug );
 
 	def( "_nameProcess", &nameProcess );
-
-	// Various parts of gaffer create new threads from C++, and those
-	// threads may call back into Python via wrapped classes at any time.
-	// We must prepare Python for this by calling PyEval_InitThreads().
-
-	PyEval_InitThreads();
+#ifdef _MSC_VER
+	def( "_verifyAllocator", &verifyAllocator );
+#endif
 
 }

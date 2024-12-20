@@ -35,7 +35,6 @@
 ##########################################################################
 
 import unittest
-import six
 
 import imath
 
@@ -43,6 +42,7 @@ import IECore
 import IECoreScene
 
 import Gaffer
+import GafferTest
 import GafferScene
 import GafferSceneTest
 
@@ -131,15 +131,15 @@ class WireframeTest( GafferSceneTest.SceneTestCase ) :
 		wireframe["filter"].setInput( filter["out"] )
 
 		wireframe["position"].setValue( "notKnownHere" )
-		with six.assertRaisesRegex( self, RuntimeError, "MeshPrimitive has no primitive variable named \"notKnownHere\"" ) :
+		with self.assertRaisesRegex( RuntimeError, "MeshPrimitive has no primitive variable named \"notKnownHere\"" ) :
 			wireframe["out"].object( "/plane" )
 
 		wireframe["position"].setValue( "constantString" )
-		with six.assertRaisesRegex( self, RuntimeError, ".* \"constantString\" has unsupported type \"StringData\"" ) :
+		with self.assertRaisesRegex( RuntimeError, ".* \"constantString\" has unsupported type \"StringData\"" ) :
 			wireframe["out"].object( "/plane" )
 
 		wireframe["position"].setValue( "constantV3f" )
-		with six.assertRaisesRegex( self, RuntimeError, ".* \"constantV3f\" must have Vertex, Varying or FaceVarying interpolation" ) :
+		with self.assertRaisesRegex( RuntimeError, ".* \"constantV3f\" must have Vertex, Varying or FaceVarying interpolation" ) :
 			wireframe["out"].object( "/plane" )
 
 	def testAdjustBounds( self ) :
@@ -171,6 +171,24 @@ class WireframeTest( GafferSceneTest.SceneTestCase ) :
 		wireframe["adjustBounds"].setValue( False )
 		self.assertScenesEqual( wireframe["in"], wireframe["out"], checks = { "bound" } )
 		self.assertSceneHashesEqual( wireframe["in"], wireframe["out"], checks = { "bound" } )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testPerformance( self ) :
+
+		sphere = GafferScene.Sphere()
+		sphere["divisions"].setValue( imath.V2i( 1000 ) )
+
+		sphereFilter = GafferScene.PathFilter()
+		sphereFilter["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+
+		wireframe = GafferScene.Wireframe()
+		wireframe["in"].setInput( sphere["out"] )
+		wireframe["filter"].setInput( sphereFilter["out"] )
+
+		GafferSceneTest.traverseScene( wireframe["in"] )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			GafferSceneTest.traverseScene( wireframe["out"] )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -49,7 +49,13 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeepToFlat );
+namespace
+{
+	std::string g_premultipliedAverageZName( "__premultipliedAverageZ" );
+}
+
+
+GAFFER_NODE_DEFINE_TYPE( DeepToFlat );
 
 size_t DeepToFlat::g_firstPlugIndex = 0;
 
@@ -72,6 +78,7 @@ DeepToFlat::DeepToFlat( const std::string &name )
 	flattenedChannelDataPlug()->setInput( deepState()->outPlug()->channelDataPlug() );
 
 	// We don't ever want to change these, so we make pass-through connections.
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
@@ -155,21 +162,21 @@ void DeepToFlat::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *c
 	}
 
 	const std::string &channelName = context->get<std::string>( ImagePlug::channelNameContextName );
-	if( channelName == "__premultipliedAverageZ" )
+	if( channelName == g_premultipliedAverageZName )
 	{
 		ImagePlug::ChannelDataScope channelScope( context );
-		channelScope.setChannelName( "Z" );
+		channelScope.setChannelName( &ImageAlgo::channelNameZ );
 		inPlug()->channelDataPlug()->hash( h );
 
 		ConstStringVectorDataPtr channelNames = inPlug()->channelNames();
-		if( ImageAlgo::channelExists( channelNames->readable(), "ZBack" ) )
+		if( ImageAlgo::channelExists( channelNames->readable(), ImageAlgo::channelNameZBack ) )
 		{
-			channelScope.setChannelName( "ZBack" );
+			channelScope.setChannelName( &ImageAlgo::channelNameZBack );
 			inPlug()->channelDataPlug()->hash( h );
 		}
-		if( ImageAlgo::channelExists( channelNames->readable(), "A" ) )
+		if( ImageAlgo::channelExists( channelNames->readable(), ImageAlgo::channelNameA ) )
 		{
-			channelScope.setChannelName( "A" );
+			channelScope.setChannelName( &ImageAlgo::channelNameA );
 			inPlug()->channelDataPlug()->hash( h );
 		}
 	}
@@ -189,19 +196,19 @@ void DeepToFlat::compute( Gaffer::ValuePlug *output, const Gaffer::Context *cont
 	}
 
 	const std::string &channelName = context->get<std::string>( ImagePlug::channelNameContextName );
-	if( channelName == "__premultipliedAverageZ" )
+	if( channelName == g_premultipliedAverageZName )
 	{
 		ImagePlug::ChannelDataScope channelScope( context );
-		channelScope.setChannelName( "Z" );
+		channelScope.setChannelName( &ImageAlgo::channelNameZ );
 
 		FloatVectorDataPtr resultData = inPlug()->channelDataPlug()->getValue()->copy();
 		std::vector<float> &result = resultData->writable();
 
 		ConstStringVectorDataPtr channelNames = inPlug()->channelNames();
-		if( ImageAlgo::channelExists( channelNames->readable(), "ZBack" ) )
+		if( ImageAlgo::channelExists( channelNames->readable(), ImageAlgo::channelNameZBack ) )
 		{
 			// If we have a ZBack channel, find the average depth of each sample
-			channelScope.setChannelName( "ZBack" );
+			channelScope.setChannelName( &ImageAlgo::channelNameZBack );
 			ConstFloatVectorDataPtr zBackData = inPlug()->channelDataPlug()->getValue();
 			const std::vector<float> &zBack = zBackData->readable();
 			for( unsigned int i = 0; i < result.size(); i++ )
@@ -211,7 +218,7 @@ void DeepToFlat::compute( Gaffer::ValuePlug *output, const Gaffer::Context *cont
 		}
 		if( ImageAlgo::channelExists( channelNames->readable(), "A" ) )
 		{
-			channelScope.setChannelName( "A" );
+			channelScope.setChannelName( &ImageAlgo::channelNameA );
 			ConstFloatVectorDataPtr alphaData = inPlug()->channelDataPlug()->getValue();
 			const std::vector<float> &alpha = alphaData->readable();
 			for( unsigned int i = 0; i < result.size(); i++ )
@@ -286,7 +293,7 @@ void DeepToFlat::hashChannelData( const GafferImage::ImagePlug *output, const Ga
 	ImageProcessor::hashChannelData( output, context, h );
 
 	ImagePlug::ChannelDataScope channelScope( context );
-	channelScope.setChannelName( "__premultipliedAverageZ" );
+	channelScope.setChannelName( &g_premultipliedAverageZName );
 
 	flattenedChannelDataPlug()->hash( h );
 }
@@ -314,7 +321,7 @@ IECore::ConstFloatVectorDataPtr DeepToFlat::computeChannelData( const std::strin
 	// But in this case, we know that the internal DeepState node will just do the filtering of whatever
 	// it gets by querying this channel from its input channelData, and that will just hit our
 	// intermediateChannelData plug, which has a special case to handle this
-	channelScope.setChannelName( "__premultipliedAverageZ" );
+	channelScope.setChannelName( &g_premultipliedAverageZName );
 	FloatVectorDataPtr resultData = flattenedChannelDataPlug()->getValue()->copy();
 	std::vector<float> &result = resultData->writable();
 
@@ -323,7 +330,7 @@ IECore::ConstFloatVectorDataPtr DeepToFlat::computeChannelData( const std::strin
 	{
 		// For consistency with other uses of Z, once we've got a properly filtered and merged Z,
 		// we can unpremult it again
-		channelScope.setChannelName( "A" );
+		channelScope.setChannelName( &ImageAlgo::channelNameA );
 		ConstFloatVectorDataPtr alphaData = flattenedChannelDataPlug()->getValue();
 		const std::vector<float> &alpha = alphaData->readable();
 		for( unsigned int i = 0; i < result.size(); i++ )

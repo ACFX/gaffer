@@ -34,21 +34,16 @@
 #
 ##########################################################################
 
-__import__( "IECoreImage" )
-__import__( "Gaffer" )
 __import__( "GafferDispatch" )
-
-def __setupEnvironment() :
-
-	import os
-	if "OCIO" not in os.environ :
-		os.environ["OCIO"] = os.path.expandvars( "$GAFFER_ROOT/openColorIO/config.ocio" )
-
-__setupEnvironment()
+__import__( "Gaffer" )
+__import__( "IECoreImage" )
 
 from ._GafferImage import *
 from .CatalogueSelect import CatalogueSelect
 from .BleedFill import BleedFill
 from .DeepTidy import DeepTidy
+from .Anaglyph import Anaglyph
+from .ContactSheet import ContactSheet
+from .MetadataOverlay import MetadataOverlay
 
 __import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferImage" )

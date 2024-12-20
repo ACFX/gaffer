@@ -50,7 +50,7 @@ using namespace Gaffer;
 // Empty implementation
 //////////////////////////////////////////////////////////////////////////
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Empty );
+GAFFER_NODE_DEFINE_TYPE( Empty );
 
 size_t Empty::g_firstPlugIndex = 0;
 
@@ -88,6 +88,16 @@ void Empty::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs 
 	{
 		outputs.push_back( outPlug()->formatPlug() );
 	}
+}
+
+void Empty::hashViewNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashViewNames( output, context, h );
+}
+
+IECore::ConstStringVectorDataPtr Empty::computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	return ImagePlug::defaultViewNames();
 }
 
 void Empty::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const

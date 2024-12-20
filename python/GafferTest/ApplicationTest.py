@@ -36,7 +36,8 @@
 
 import os
 import time
-import subprocess32 as subprocess
+import subprocess
+import unittest
 
 import IECore
 import Gaffer
@@ -55,18 +56,14 @@ class ApplicationTest( GafferTest.TestCase ) :
 
 	def testWrapperDoesntDuplicatePaths( self ) :
 
-		output = subprocess.check_output( [ "gaffer", "env", "env" ], universal_newlines = True )
-		externalEnv = {}
-		for line in output.split( '\n' ) :
-			partition = line.partition( "=" )
-			externalEnv[partition[0]] = partition[2]
+		for v in ["GAFFER_STARTUP_PATHS", "GAFFER_APP_PATHS"] :
+			value = subprocess.check_output( [ str( Gaffer.executablePath() ), "env", "python", "-c", "import os; print(os.environ['{}'])".format( v ) ], universal_newlines = True )
+			self.assertEqual( value.strip(), os.environ[v] )
 
-		self.assertEqual( externalEnv["GAFFER_STARTUP_PATHS"], os.environ["GAFFER_STARTUP_PATHS"] )
-		self.assertEqual( externalEnv["GAFFER_APP_PATHS"], os.environ["GAFFER_APP_PATHS"] )
-
+	@unittest.skipIf( os.name == "nt", "Process name is not controllable on Windows.")
 	def testProcessName( self ) :
 
-		process = subprocess.Popen( [ "gaffer", "env", "sleep", "100" ] )
+		process = subprocess.Popen( [ str( Gaffer.executablePath() ), "env", "sleep", "100" ] )
 		time.sleep( 1 )
 		command = subprocess.check_output( [ "ps", "-p", str( process.pid ), "-o", "command=" ], universal_newlines = True ).strip()
 		name = subprocess.check_output( [ "ps", "-p", str( process.pid ), "-o", "comm=" ], universal_newlines = True ).strip()

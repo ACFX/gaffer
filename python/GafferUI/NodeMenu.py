@@ -37,7 +37,6 @@
 
 import inspect
 import imath
-import six
 
 import IECore
 
@@ -105,10 +104,7 @@ class NodeMenu( object ) :
 
 			commandArgs = []
 			with IECore.IgnoredExceptions( TypeError ) :
-				if six.PY3 :
-					commandArgs = inspect.getfullargspec( nodeCreator ).args
-				else :
-					commandArgs = inspect.getargspec( nodeCreator )[0]
+				commandArgs = inspect.getfullargspec( nodeCreator ).args
 
 			with Gaffer.UndoScope( script ) :
 
@@ -120,7 +116,8 @@ class NodeMenu( object ) :
 				if node is None :
 					return
 
-				Gaffer.NodeAlgo.applyUserDefaults( node )
+				with script.context():
+					Gaffer.NodeAlgo.applyUserDefaults( node )
 
 				for plugName, plugValue in plugValues.items() :
 					node.descendant( plugName ).setValue( plugValue )

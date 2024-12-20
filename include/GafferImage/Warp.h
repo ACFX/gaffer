@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_WARP_H
-#define GAFFERIMAGE_WARP_H
+#pragma once
 
 #include "GafferImage/FlatImageProcessor.h"
 
@@ -61,10 +60,10 @@ class GAFFERIMAGE_API Warp : public FlatImageProcessor
 {
 	public :
 
-		Warp( const std::string &name=defaultName<Warp>() );
+		explicit Warp( const std::string &name=defaultName<Warp>() );
 		~Warp() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Warp, WarpTypeId, FlatImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Warp, WarpTypeId, FlatImageProcessor );
 
 		Gaffer::IntPlug *boundingModePlug();
 		const Gaffer::IntPlug *boundingModePlug() const;
@@ -131,5 +130,3 @@ class GAFFERIMAGE_API Warp : public FlatImageProcessor
 IE_CORE_DECLAREPTR( Warp )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_WARP_H

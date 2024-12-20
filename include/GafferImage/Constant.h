@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_CONSTANT_H
-#define GAFFERIMAGE_CONSTANT_H
+#pragma once
 
 #include "GafferImage/FormatPlug.h"
 #include "GafferImage/FlatImageSource.h"
@@ -51,10 +50,10 @@ class GAFFERIMAGE_API Constant : public FlatImageSource
 
 	public :
 
-		Constant( const std::string &name=defaultName<Constant>() );
+		explicit Constant( const std::string &name=defaultName<Constant>() );
 		~Constant() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Constant, ConstantTypeId, FlatImageSource );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Constant, ConstantTypeId, FlatImageSource );
 
 		GafferImage::FormatPlug *formatPlug();
 		const GafferImage::FormatPlug *formatPlug() const;
@@ -89,5 +88,3 @@ class GAFFERIMAGE_API Constant : public FlatImageSource
 IE_CORE_DECLAREPTR( Constant )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_CONSTANT_H

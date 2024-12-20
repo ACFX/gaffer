@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_INTERACTIVERENDER_H
-#define GAFFERSCENE_INTERACTIVERENDER_H
+#pragma once
 
 #include "GafferScene/Private/IECoreScenePreview/Renderer.h"
 #include "GafferScene/RenderController.h"
@@ -60,10 +59,10 @@ class GAFFERSCENE_API InteractiveRender : public Gaffer::ComputeNode
 
 	public :
 
-		InteractiveRender( const std::string &name=defaultName<InteractiveRender>() );
+		explicit InteractiveRender( const std::string &name=defaultName<InteractiveRender>() );
 		~InteractiveRender() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::InteractiveRender, GafferScene::InteractiveRenderTypeId, Gaffer::ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::InteractiveRender, GafferScene::InteractiveRenderTypeId, Gaffer::ComputeNode );
 
 		enum State
 		{
@@ -84,6 +83,9 @@ class GAFFERSCENE_API InteractiveRender : public Gaffer::ComputeNode
 		GafferScene::ScenePlug *outPlug();
 		const GafferScene::ScenePlug *outPlug() const;
 
+		Gaffer::StringPlug *resolvedRendererPlug();
+		const Gaffer::StringPlug *resolvedRendererPlug() const;
+
 		Gaffer::ObjectPlug *messagesPlug();
 		const Gaffer::ObjectPlug *messagesPlug() const;
 
@@ -94,20 +96,22 @@ class GAFFERSCENE_API InteractiveRender : public Gaffer::ComputeNode
 		Gaffer::Context *getContext();
 		const Gaffer::Context *getContext() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
+		/// If a render is currently active, calls `Renderer::command()`,
+		/// pausing the renderer temporarily if necessary.
+		IECore::DataPtr command( const IECore::InternedString name, const IECore::CompoundDataMap &parameters = IECore::CompoundDataMap() );
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		// Constructor for derived classes which wish to hardcode the renderer type. Perhaps
-		// at some point we won't even have derived classes, but instead will always use the
-		// base class? At the moment the main purpose of the derived classes is to force the
-		// loading of the module which registers the required renderer type.
-		InteractiveRender( const IECore::InternedString &rendererType, const std::string &name );
-
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
+
+		bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const override;
+
+		IECoreScenePreview::Renderer *renderer() { return m_renderer.get(); }
 
 	private :
 
@@ -120,7 +124,7 @@ class GAFFERSCENE_API InteractiveRender : public Gaffer::ComputeNode
 		void messagesChanged();
 		static void messagesChangedUI();
 
-		void plugDirtied( const Gaffer::Plug *plug );
+		void plugSet( const Gaffer::Plug *plug );
 
 		void update();
 		Gaffer::ConstContextPtr effectiveContext();
@@ -141,9 +145,4 @@ class GAFFERSCENE_API InteractiveRender : public Gaffer::ComputeNode
 
 IE_CORE_DECLAREPTR( InteractiveRender );
 
-typedef Gaffer::FilteredChildIterator<Gaffer::TypePredicate<InteractiveRender> > InteractiveRenderIterator;
-typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::TypePredicate<InteractiveRender> > RecursiveInteractiveRenderIterator;
-
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_INTERACTIVERENDER_H

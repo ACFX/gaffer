@@ -43,7 +43,7 @@ using namespace Gaffer;
 using namespace GafferScene;
 using namespace GafferArnold;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ArnoldDisplacement );
+GAFFER_NODE_DEFINE_TYPE( ArnoldDisplacement );
 
 size_t ArnoldDisplacement::g_firstPlugIndex = 0;
 static IECore::InternedString g_mapAttributeName = "ai:disp_map";
@@ -181,8 +181,10 @@ IECore::ConstCompoundObjectPtr ArnoldDisplacement::attributes( const Gaffer::Plu
 	m[g_heightAttributeName] = new FloatData( heightPlug()->getValue() );
 	m[g_paddingAttributeName] = new FloatData( paddingPlug()->getValue() );
 	m[g_zeroValueAttributeName] = new FloatData( zeroValuePlug()->getValue() );
-	m[g_autoBumpAttributeName] = new BoolData( autoBumpPlug()->getValue() );
-
+	if ( !autoBumpPlug()->isSetToDefault() )
+	{
+		m[g_autoBumpAttributeName] = new BoolData( autoBumpPlug()->getValue() );
+	}
 	return result;
 }
 

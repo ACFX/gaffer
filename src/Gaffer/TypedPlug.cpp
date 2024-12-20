@@ -39,7 +39,7 @@
 
 #include "Gaffer/NumericPlug.h"
 #include "Gaffer/StringPlug.h"
-#include "Gaffer/TypedPlug.inl"
+#include "Gaffer/TypedPlugImplementation.h"
 
 namespace Gaffer
 {
@@ -62,10 +62,11 @@ bool BoolPlug::acceptsInput( const Plug *input ) const
 	}
 	if( input )
 	{
-		return input->isInstanceOf( staticTypeId() ) ||
-		       input->isInstanceOf( IntPlug::staticTypeId() ) ||
-		       input->isInstanceOf( FloatPlug::staticTypeId() ) ||
-		       input->isInstanceOf( StringPlug::staticTypeId() )
+		return
+			input->isInstanceOf( staticTypeId() ) ||
+			input->isInstanceOf( IntPlug::staticTypeId() ) ||
+			input->isInstanceOf( FloatPlug::staticTypeId() ) ||
+			input->isInstanceOf( StringPlug::staticTypeId() )
 		;
 	}
 	return true;

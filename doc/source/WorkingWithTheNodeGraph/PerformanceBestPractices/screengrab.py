@@ -1,8 +1,13 @@
-# BuildTarget: images/graphEditorGroupFirst.png images/graphEditorGroupSecond.png images/conceptPerformanceBestPracticesContextsViewer.png images/conceptPerformanceBestPracticesContextsGraphEditor.png images/conceptPerformanceBestPracticesContextsStats.png images/conceptPerformanceBestPracticesContextsImprovedStats.png
+# BuildTarget: images/conceptPerformanceBestPracticesContextsGraphEditor.png
+# BuildTarget: images/conceptPerformanceBestPracticesContextsImprovedStats.png
+# BuildTarget: images/conceptPerformanceBestPracticesContextsStats.png
+# BuildTarget: images/conceptPerformanceBestPracticesContextsViewer.png
+# BuildTarget: images/graphEditorGroupFirst.png
+# BuildTarget: images/graphEditorGroupSecond.png
 
 import os
 import time
-import subprocess32 as subprocess
+import subprocess
 
 import imath
 import Gaffer
@@ -36,6 +41,7 @@ GafferUI.WidgetAlgo.grab( widget = graphEditor, imagePath = "images/graphEditorG
 script["fileName"].setValue( os.path.abspath( "scripts/conceptPerformanceBestPracticesContexts.gfr" ) )
 script.load()
 script.selection().add( Gaffer.StandardSet( [ script["CollectScenes"] ] ) )
+script.setFocus( script["CollectScenes"] )
 __delay( 0.1 )
 viewport = viewer.view().viewportGadget()
 viewport.frame( viewport.getPrimaryChild().bound() )
@@ -75,8 +81,7 @@ command = "gaffer stats {inputScript} -scene {node} -contextMonitor -annotatedSc
 	node = "CollectScenes",
 	outputScript = outputScript
 	)
-process = subprocess.Popen( command, shell=True, stderr = subprocess.PIPE )
-process.wait()
+subprocess.check_call( command, shell=True )
 script["fileName"].setValue( outputScript )
 script.load()
 with GafferUI.Window() as window :
@@ -104,8 +109,7 @@ command = "gaffer stats {inputScript} -scene {node} -contextMonitor -annotatedSc
 	node = "CollectScenes",
 	outputScript = outputScript
 	)
-process = subprocess.Popen( command, shell=True, stderr = subprocess.PIPE )
-process.wait()
+subprocess.check_call( command, shell=True )
 script["fileName"].setValue( outputScript )
 script.load()
 with GafferUI.Window() as window :

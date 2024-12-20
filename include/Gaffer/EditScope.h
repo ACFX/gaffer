@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFER_EDITSCOPE_H
-#define GAFFER_EDITSCOPE_H
+#pragma once
 
 #include "Gaffer/Box.h"
 
@@ -44,17 +43,36 @@ namespace Gaffer
 
 class BoxOut;
 
-/// A container node for interactive tools to make nodes
-/// in as necessary.
+/// A container node for interactive tools to make nodes in as necessary.
+///
+/// EditScopes and Tools
+/// ====================
+///
+/// Tools that affect change by modifying nodes/plugs in the Node Graph
+/// should use the following logic to determine their edit target:
+///
+///  - If no EditScope has been selected, use the last (closest) upstream
+///    target.
+///
+///  - If an EditScope has been selected, prefer existing targets inside
+///    the EditScope over using the EditScopeAlgo to acquire a new target.
+///
+///  - If an EditScope has been selected, but is upstream of another target
+///    either error (if overrides preclude editing), or allow editing with
+///    a suitable warning identifying the last downstream target.
+///
+///  - If an EditScope has been selected but is not in the scene history,
+///    error.
+///
 class GAFFER_API EditScope : public Box
 {
 
 	public :
 
-		EditScope( const std::string &name=defaultName<EditScope>() );
+		explicit EditScope( const std::string &name=defaultName<EditScope>() );
 		~EditScope() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::EditScope, EditScopeTypeId, Box );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::EditScope, EditScopeTypeId, Box );
 
 		/// Setup and plugs
 		/// ===============
@@ -126,5 +144,3 @@ IE_CORE_DECLAREPTR( EditScope )
 } // namespace Gaffer
 
 #include "Gaffer/EditScope.inl"
-
-#endif // GAFFER_EDITSCOPE_H

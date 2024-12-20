@@ -45,7 +45,9 @@
 #include "Gaffer/Context.h"
 #include "Gaffer/EditScope.h"
 #include "Gaffer/Plug.h"
+#include "Gaffer/ScriptNode.h"
 
+#include "IECorePython/ExceptionAlgo.h"
 #include "IECorePython/ScopedGILRelease.h"
 
 #include "boost/python/suite/indexing/container_utils.hpp"
@@ -57,13 +59,19 @@ using namespace GafferUI;
 namespace
 {
 
+ContextPtr contextWrapper( const View &view, bool copy )
+{
+	ConstContextPtr c = view.context();
+	return copy ? new Context( *c ) : boost::const_pointer_cast<Context>( c );
+}
+
 class ViewWrapper : public GafferBindings::NodeWrapper<View>
 {
 
 	public :
 
-		ViewWrapper( PyObject *self, const std::string &name, PlugPtr input )
-			:	GafferBindings::NodeWrapper<View>( self, name, input )
+		ViewWrapper( PyObject *self, const std::string &name, ScriptNodePtr scriptNode, PlugPtr input )
+			:	GafferBindings::NodeWrapper<View>( self, name, scriptNode, input )
 		{
 		}
 
@@ -76,10 +84,10 @@ struct ViewCreator
 	{
 	}
 
-	ViewPtr operator()( Gaffer::PlugPtr plug )
+	ViewPtr operator()( Gaffer::ScriptNodePtr scriptNode )
 	{
 		IECorePython::ScopedGILLock gilLock;
-		ViewPtr result = extract<ViewPtr>( m_fn( plug ) );
+		ViewPtr result = extract<ViewPtr>( m_fn( scriptNode ) );
 		return result;
 	}
 
@@ -105,6 +113,36 @@ ViewPtr create( Gaffer::PlugPtr input )
 	return View::create( input );
 }
 
+void registerDisplayTransformWrapper( const std::string &name, object creator )
+{
+	View::DisplayTransform::registerDisplayTransform(
+		name,
+		[creator] () {
+			IECorePython::ScopedGILLock gilLock;
+			try
+			{
+				object pythonShader = creator();
+				IECoreGL::Shader::SetupPtr shader = extract<IECoreGL::Shader::SetupPtr>( pythonShader );
+				return shader;
+			}
+			catch( error_already_set & )
+			{
+				IECorePython::ExceptionAlgo::translatePythonException();
+			}
+		}
+	);
+}
+
+list registeredDisplayTransformsWrapper()
+{
+	list result;
+	for( const auto &name : View::DisplayTransform::registeredDisplayTransforms() )
+	{
+		result.append( name );
+	}
+	return result;
+}
+
 } // namespace
 
 namespace GafferUIModule
@@ -117,11 +155,11 @@ Gaffer::NodePtr getPreprocessor( View &v )
 
 void bindView()
 {
-	GafferBindings::NodeClass<View, ViewWrapper>( nullptr, no_init )
-		.def( init<const std::string &, PlugPtr>() )
+	scope s = GafferBindings::NodeClass<View, ViewWrapper>( nullptr, no_init )
+		.def( init<const std::string &, ScriptNodePtr, PlugPtr>() )
+		.def( "scriptNode", (ScriptNode *(View::*)())&View::scriptNode, return_value_policy<IECorePython::CastToIntrusivePtr>() )
 		.def( "editScope", (EditScope *(View::*)())&View::editScope, return_value_policy<IECorePython::CastToIntrusivePtr>() )
-		.def( "getContext", (Context *(View::*)())&View::getContext, return_value_policy<IECorePython::CastToIntrusivePtr>() )
-		.def( "setContext", &View::setContext )
+		.def( "context", &contextWrapper, ( arg( "_copy" ) = true ) )
 		.def( "contextChangedSignal", &View::contextChangedSignal, return_internal_reference<1>() )
 		.def( "viewportGadget", (ViewportGadget *(View::*)())&View::viewportGadget, return_value_policy<IECorePython::CastToIntrusivePtr>() )
 		.def( "_setPreprocessor", &View::setPreprocessor )
@@ -131,6 +169,16 @@ void bindView()
 		.def( "registerView", &registerView1 )
 		.def( "registerView", &registerView2 )
 		.staticmethod( "registerView" )
+	;
+
+	GafferBindings::NodeClass<View::DisplayTransform>( nullptr, no_init )
+		.def( init<View *>() )
+		.def( "registerDisplayTransform", &registerDisplayTransformWrapper )
+		.staticmethod( "registerDisplayTransform" )
+		.def( "deregisterDisplayTransform", &View::DisplayTransform::deregisterDisplayTransform )
+		.staticmethod( "deregisterDisplayTransform" )
+		.def( "registeredDisplayTransforms", &registeredDisplayTransformsWrapper )
+		.staticmethod( "registeredDisplayTransforms" )
 	;
 }
 

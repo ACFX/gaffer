@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 ##########################################################################
 #
 #  Copyright (c) 2014, Image Engine Design Inc. All rights reserved.
@@ -339,14 +337,27 @@ plugsMetadata = {
 
 	],
 
+	"renderSettingOverrides.*" : [
+
+		"nameValuePlugPlugValueWidget:ignoreNamePlug", True,
+
+	],
+
 	"visualiserAttributes" : [
 
 			"description",
 			"""
-			Attributes that affect the visualisation of this Light in the Viewer.
+			Attributes that affect the visualisation of this camera in the Viewer.
 			""",
 
 			"layout:section", "Visualisation",
+			"compoundDataPlugValueWidget:editable", False,
+
+	],
+
+	"visualiserAttributes.*" : [
+
+		"nameValuePlugPlugValueWidget:ignoreNamePlug", True,
 
 	],
 
@@ -482,4 +493,4 @@ def __nodeEditorToolMenu( nodeEditor, node, menuDefinition ) :
 
 		)
 
-__nodeEditorToolMenuConnection = GafferUI.NodeEditor.toolMenuSignal().connect( __nodeEditorToolMenu )
+GafferUI.NodeEditor.toolMenuSignal().connect( __nodeEditorToolMenu )

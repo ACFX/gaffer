@@ -38,9 +38,10 @@
 
 #include "IECore/StringAlgo.h"
 
-#include "boost/format.hpp"
 #include "boost/lexical_cast.hpp"
 #include "boost/regex.hpp"
+
+#include "fmt/format.h"
 
 #include <unordered_set>
 
@@ -79,11 +80,27 @@ size_t hash_value( const ChildNamesMap::Input &v )
 	return s;
 }
 
+InternedString ChildNamesMap::uniqueName( InternedString name, const std::unordered_set<InternedString> &existingNames )
+{
+	if( existingNames.find( name ) != existingNames.end() )
+	{
+		// uniqueify the name
+		string prefix;
+		int suffix = IECore::StringAlgo::numericSuffix( name.string(), 1, &prefix );
+
+		do
+		{
+			name = prefix + to_string( suffix );
+			suffix++;
+		} while( existingNames.find( name ) != existingNames.end() );
+	}
+	return name;
+}
+
 ChildNamesMap::ChildNamesMap( const std::vector<IECore::ConstInternedStringVectorDataPtr> &inputChildNames )
 	:	m_childNames( new InternedStringVectorData() )
 {
 	vector<InternedString> &outputChildNames = m_childNames->writable();
-	boost::format namePrefixSuffixFormatter( "%s%d" );
 
 	unordered_set<InternedString> allNames;
 	size_t index = 0;
@@ -91,20 +108,7 @@ ChildNamesMap::ChildNamesMap( const std::vector<IECore::ConstInternedStringVecto
 	{
 		for( const auto &inputChildName : childNamesData->readable() )
 		{
-			InternedString outputChildName = inputChildName;
-			if( allNames.find( inputChildName ) != allNames.end() )
-			{
-				// uniqueify the name
-				string prefix;
-				int suffix = IECore::StringAlgo::numericSuffix( inputChildName.string(), 1, &prefix );
-
-				do
-				{
-					outputChildName = boost::str( namePrefixSuffixFormatter % prefix % suffix );
-					suffix++;
-				} while( allNames.find( outputChildName ) != allNames.end() );
-			}
-
+			const InternedString outputChildName = uniqueName( inputChildName, allNames );
 			allNames.insert( outputChildName );
 			outputChildNames.push_back( outputChildName );
 
@@ -125,7 +129,7 @@ const ChildNamesMap::Input &ChildNamesMap::input( IECore::InternedString outputN
 	if( it == m_map.end() )
 	{
 		throw IECore::Exception(
-			boost::str( boost::format( "Invalid child name \"%1%\"" ) % outputName )
+			fmt::format( "Invalid child name \"{}\"", outputName.string() )
 		);
 	}
 
@@ -174,7 +178,7 @@ IECore::PathMatcher ChildNamesMap::set( const std::vector<IECore::ConstPathMatch
 				pIt.prune(); // We only want to visit the first level
 			}
 		}
-	 	inputIndex++;
+		inputIndex++;
 	}
 
 	return result;

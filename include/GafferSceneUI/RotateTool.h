@@ -34,15 +34,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENEUI_ROTATETOOL_H
-#define GAFFERSCENEUI_ROTATETOOL_H
+#pragma once
 
 #include "GafferSceneUI/TransformTool.h"
 
 #include "GafferUI/Style.h"
 
 IECORE_PUSH_DEFAULT_VISIBILITY
-#include "OpenEXR/ImathEuler.h"
+#include "Imath/ImathEuler.h"
 IECORE_POP_DEFAULT_VISIBILITY
 
 namespace GafferSceneUI
@@ -55,10 +54,10 @@ class GAFFERSCENEUI_API RotateTool : public TransformTool
 
 	public :
 
-		RotateTool( SceneView *view, const std::string &name = defaultName<RotateTool>() );
+		explicit RotateTool( SceneView *view, const std::string &name = defaultName<RotateTool>() );
 		~RotateTool() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::RotateTool, RotateToolTypeId, TransformTool );
+		GAFFER_NODE_DECLARE_TYPE( GafferSceneUI::RotateTool, RotateToolTypeId, TransformTool );
 
 		Gaffer::IntPlug *orientationPlug();
 		const Gaffer::IntPlug *orientationPlug() const;
@@ -98,7 +97,7 @@ class GAFFERSCENEUI_API RotateTool : public TransformTool
 
 				// Initialised lazily when we first
 				// acquire the transform plug.
-				mutable boost::optional<Imath::Eulerf> m_originalRotation; // Radians
+				mutable std::optional<Imath::Eulerf> m_originalRotation; // Radians
 
 		};
 
@@ -119,7 +118,7 @@ class GAFFERSCENEUI_API RotateTool : public TransformTool
 		bool buttonPress( const GafferUI::ButtonEvent &event );
 
 		void setTargetedMode( bool targeted );
-		inline bool getTargetedMode() const { return m_targetedMode; }
+		bool getTargetedMode() const { return m_targetedMode; }
 		bool m_targetedMode;
 
 		std::vector<Rotation> m_drag;
@@ -130,5 +129,3 @@ class GAFFERSCENEUI_API RotateTool : public TransformTool
 };
 
 } // namespace GafferSceneUI
-
-#endif // GAFFERSCENEUI_ROTATETOOL_H

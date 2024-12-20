@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_CURVESAMPLER_H
-#define GAFFERSCENE_CURVESAMPLER_H
+#pragma once
 
 #include "GafferScene/PrimitiveSampler.h"
 
@@ -47,10 +46,10 @@ class GAFFERSCENE_API CurveSampler : public PrimitiveSampler
 
 	public :
 
-		CurveSampler( const std::string &name = defaultName<CurveSampler>() );
+		explicit CurveSampler( const std::string &name = defaultName<CurveSampler>() );
 		~CurveSampler() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CurveSampler, CurveSamplerTypeId, PrimitiveSampler );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::CurveSampler, CurveSamplerTypeId, PrimitiveSampler );
 
 		Gaffer::StringPlug *curveIndexPlug();
 		const Gaffer::StringPlug *curveIndexPlug() const;
@@ -73,5 +72,3 @@ class GAFFERSCENE_API CurveSampler : public PrimitiveSampler
 IE_CORE_DECLAREPTR( CurveSampler )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_CURVESAMPLER_H

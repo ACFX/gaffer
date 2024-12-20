@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFER_NAMESWITCH_H
-#define GAFFER_NAMESWITCH_H
+#pragma once
 
 #include "Gaffer/Switch.h"
 
@@ -44,14 +43,14 @@ namespace Gaffer
 
 class StringPlug;
 
-class IECORE_EXPORT NameSwitch : public Switch
+class GAFFER_API NameSwitch : public Switch
 {
 
 	public :
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::NameSwitch, NameSwitchTypeId, Switch );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::NameSwitch, NameSwitchTypeId, Switch );
 
-		NameSwitch( const std::string &name=GraphComponent::defaultName<NameSwitch>() );
+		explicit NameSwitch( const std::string &name=GraphComponent::defaultName<NameSwitch>() );
 		~NameSwitch() override;
 
 		void setup( const Plug *plug );
@@ -78,5 +77,3 @@ class IECORE_EXPORT NameSwitch : public Switch
 IE_CORE_DECLAREPTR( NameSwitch );
 
 } // namespace Gaffer
-
-#endif // GAFFER_NAMESWITCH_H

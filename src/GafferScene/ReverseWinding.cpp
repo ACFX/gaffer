@@ -43,7 +43,7 @@ using namespace IECore;
 using namespace IECoreScene;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ReverseWinding );
+GAFFER_NODE_DEFINE_TYPE( ReverseWinding );
 
 ReverseWinding::ReverseWinding( const std::string &name )
 	:	ObjectProcessor( name )
@@ -73,6 +73,6 @@ IECore::ConstObjectPtr ReverseWinding::computeProcessedObject( const ScenePath &
 	}
 
 	MeshPrimitivePtr meshCopy = mesh->copy();
-	MeshAlgo::reverseWinding( meshCopy.get() );
+	MeshAlgo::reverseWinding( meshCopy.get(), context->canceller() );
 	return meshCopy;
 }

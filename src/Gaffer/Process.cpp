@@ -46,6 +46,8 @@
 
 #include "tbb/enumerable_thread_specific.h"
 
+#include "fmt/format.h"
+
 using namespace Gaffer;
 
 //////////////////////////////////////////////////////////////////////////
@@ -70,14 +72,52 @@ std::string prefixedWhat( const IECore::Exception &e )
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
+// Collaboration
+//////////////////////////////////////////////////////////////////////////
+
+Process::Collaboration::~Collaboration() noexcept( true )
+{
+}
+
+bool Process::Collaboration::dependsOn( const Collaboration *collaboration ) const
+{
+	if( collaboration == this )
+	{
+		return true;
+	}
+
+	std::unordered_set<const Collaboration *> visited;
+	std::deque<const Collaboration *> toVisit( { collaboration } );
+
+	while( !toVisit.empty() )
+	{
+		const Collaboration *c = toVisit.front();
+		toVisit.pop_front();
+		if( !visited.insert( c ).second )
+		{
+			continue;
+		}
+		if( c->dependents.count( this ) )
+		{
+			return true;
+		}
+		toVisit.insert( toVisit.end(), c->dependents.begin(), c->dependents.end() );
+	}
+
+	return false;
+}
+
+tbb::spin_mutex Process::Collaboration::g_dependentsMutex;
+
+//////////////////////////////////////////////////////////////////////////
 // Process
 //////////////////////////////////////////////////////////////////////////
 
 Process::Process( const IECore::InternedString &type, const Plug *plug, const Plug *destinationPlug )
-	:	m_type( type ), m_plug( plug ), m_destinationPlug( destinationPlug ? destinationPlug : plug )
+	:	m_type( type ), m_plug( plug ), m_destinationPlug( destinationPlug ? destinationPlug : plug ),
+		m_parent( m_threadState->m_process ), m_collaboration( m_parent ? m_parent->m_collaboration : nullptr )
 {
 	IECore::Canceller::check( context()->canceller() );
-	m_parent = m_threadState->m_process;
 	m_threadState->m_process = this;
 
 	for( const auto &m : *m_threadState->m_monitors )
@@ -92,6 +132,22 @@ Process::~Process()
 	{
 		m->processFinished( this );
 	}
+
+	if( context()->canceller() )
+	{
+		const auto t = context()->canceller()->elapsedTime();
+		if( t > std::chrono::seconds( 1 ) )
+		{
+			IECore::msg(
+				IECore::Msg::Warning, "Process::~Process",
+				fmt::format(
+					"Cancellation for `{}` ({}) took {}s",
+					plug()->fullName(), type().string(),
+					std::chrono::duration<float>( t ).count()
+				)
+			);
+		}
+	}
 }
 
 const Process *Process::current()
@@ -99,7 +155,7 @@ const Process *Process::current()
 	return ThreadState::current().m_process;
 }
 
-void Process::handleException()
+void Process::handleException() const
 {
 	try
 	{
@@ -107,7 +163,7 @@ void Process::handleException()
 		// so we can examine it.
 		throw;
 	}
-	catch( const IECore::Cancelled &e )
+	catch( const IECore::Cancelled & )
 	{
 		// Process is just being cancelled. No need
 		// to report via `emitError()`.
@@ -159,6 +215,23 @@ void Process::emitError( const std::string &error, const Plug *source ) const
 	}
 }
 
+bool Process::forceMonitoringInternal( const ThreadState &s, const Plug *plug, const IECore::InternedString &processType )
+{
+	if( s.m_monitors )
+	{
+		for( const auto &m : *s.m_monitors )
+		{
+			if( m->forceMonitoring( plug, processType ) )
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+
 //////////////////////////////////////////////////////////////////////////
 // ProcessException
 //////////////////////////////////////////////////////////////////////////
@@ -200,11 +273,11 @@ void ProcessException::wrapCurrentException( const ConstPlugPtr &plug, const Con
 	{
 		throw;
 	}
-	catch( const IECore::Cancelled &e )
+	catch( const IECore::Cancelled & )
 	{
 		throw;
 	}
-	catch( const ProcessException &e )
+	catch( const ProcessException & )
 	{
 		throw;
 	}

@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_MESHTANGENTS_H
-#define GAFFERSCENE_MESHTANGENTS_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -50,7 +49,7 @@ class GAFFERSCENE_API MeshTangents : public ObjectProcessor
 
 	public :
 
-		MeshTangents( const std::string &name=defaultName<MeshTangents>() );
+		explicit MeshTangents( const std::string &name=defaultName<MeshTangents>() );
 		~MeshTangents() override;
 
 		enum Mode
@@ -92,7 +91,7 @@ class GAFFERSCENE_API MeshTangents : public ObjectProcessor
 		Gaffer::StringPlug *biTangentPlug();
 		const Gaffer::StringPlug *biTangentPlug() const;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MeshTangents, MeshTangentsTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::MeshTangents, MeshTangentsTypeId, ObjectProcessor );
 
 	protected :
 
@@ -109,5 +108,3 @@ class GAFFERSCENE_API MeshTangents : public ObjectProcessor
 IE_CORE_DECLAREPTR( MeshTangents )
 
 } // namespace GafferScene
-
-#endif //GAFFERSCENE_MESHTANGENTS_H

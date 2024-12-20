@@ -35,9 +35,9 @@
 ##########################################################################
 
 import unittest
-import six
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -134,7 +134,7 @@ class CopyPrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 
 		bigSphere["divisions"][0].setValue( 100 )
 
-		with six.assertRaisesRegex( self, RuntimeError, 'Cannot copy .* from "/sphere" to "/sphere" because source and destination primitives have different topology' ) :
+		with self.assertRaisesRegex( RuntimeError, 'Cannot copy .* from "/sphere" to "/sphere" because source and destination primitives have different topology' ) :
 			copy["out"].object( "/sphere" )
 
 	def testMismatchedHierarchy( self ) :
@@ -229,6 +229,110 @@ class CopyPrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 		copy["primitiveVariables"].setValue( "uv" )
 		self.assertScenesEqual( copy["out"], group["out"], checks = { "bound" } )
 		self.assertSceneHashesEqual( copy["out"], group["out"], checks = { "bound" } )
+
+	def testDeleteSourceLocation( self ) :
+
+		sphere1 = GafferScene.Sphere()
+		sphere2 = GafferScene.Sphere()
+		sphere2["radius"].setValue( 2 )
+
+		sphereFilter = GafferScene.PathFilter()
+		sphereFilter["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+
+		prune = GafferScene.Prune()
+		prune["in"].setInput( sphere2["out"] )
+
+		copy = GafferScene.CopyPrimitiveVariables()
+		copy["in"].setInput( sphere1["out"] )
+		copy["source"].setInput( prune["out"] )
+		copy["filter"].setInput( sphereFilter["out"] )
+		copy["primitiveVariables"].setValue( "*" )
+
+		self.assertScenesEqual( copy["out"], sphere2["out"] )
+		prune["filter"].setInput( sphereFilter["out"] )
+		self.assertScenesEqual( copy["out"], sphere1["out"] )
+
+	def testPrefix( self ) :
+
+		sphere1 = GafferScene.Sphere()
+		sphere2 = GafferScene.Sphere()
+		sphere2["radius"].setValue( 2 )
+
+		sphereFilter = GafferScene.PathFilter()
+		sphereFilter["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+
+		copy = GafferScene.CopyPrimitiveVariables()
+		copy["in"].setInput( sphere1["out"] )
+		copy["source"].setInput( sphere2["out"] )
+		copy["filter"].setInput( sphereFilter["out"] )
+		copy["primitiveVariables"].setValue( "*" )
+
+		# Unprefixed
+
+		self.assertScenesEqual( copy["out"], sphere2["out"] )
+
+		# Prefixed
+
+		copy["prefix"].setValue( "copied:" )
+
+		self.assertEqual(
+			copy["out"].object( "/sphere")["P"],
+			sphere1["out"].object( "/sphere")["P"],
+		)
+
+		self.assertEqual(
+			copy["out"].object( "/sphere")["copied:P"],
+			sphere2["out"].object( "/sphere")["P"],
+		)
+
+		for location in ( "/", "/sphere" ) :
+
+			self.assertEqual(
+				copy["out"].bound( location ),
+				sphere1["out"].bound( location )
+			)
+
+			self.assertEqual(
+				copy["out"].boundHash( location ),
+				sphere1["out"].boundHash( location )
+			)
+
+	def testIgnoreIncompatible( self ) :
+
+		sphere = GafferScene.Sphere()
+		sphereFilter = GafferScene.PathFilter()
+		sphereFilter["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+
+		cube = GafferScene.Cube()
+		cubeFilter = GafferScene.PathFilter()
+		cubeFilter["paths"].setValue( IECore.StringVectorData( [ "/cube" ] ) )
+
+		cubeVariables = GafferScene.PrimitiveVariables()
+		cubeVariables["in"].setInput( cube["out"] )
+		cubeVariables["filter"].setInput( cubeFilter["out"] )
+		cubeVariables["primitiveVariables"].addChild( Gaffer.NameValuePlug( "c", IECore.IntData( 1 ) ) )
+		cubeVariables["enabled"].setValue( False )
+
+		copy = GafferScene.CopyPrimitiveVariables()
+		copy["in"].setInput( sphere["out"] )
+		copy["source"].setInput( cubeVariables["out"] )
+		copy["sourceLocation"].setValue( "/cube" )
+		copy["filter"].setInput( sphereFilter["out"] )
+		copy["primitiveVariables"].setValue( "*" )
+
+		with self.assertRaisesRegex(
+			RuntimeError,
+			'Cannot copy .* from "/cube" to "/sphere" because source and destination primitives have different topology. Turn on `ignoreIncompatible` to disable this error and ignore invalid primitive variables.'
+		) :
+			copy["out"].object( "/sphere" )
+
+		copy["ignoreIncompatible"].setValue( True )
+
+		self.assertScenesEqual( copy["out"], sphere["out"] )
+
+		# Variables that can be copied should succeed, even if others don't
+		cubeVariables["enabled"].setValue( True )
+		self.assertEqual( copy["out"].object( "/sphere" )["c"], IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Constant, IECore.IntData( 1 ) )  )
 
 if __name__ == "__main__":
 	unittest.main()

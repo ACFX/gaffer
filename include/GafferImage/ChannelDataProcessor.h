@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_CHANNELDATAPROCESSOR_H
-#define GAFFERIMAGE_CHANNELDATAPROCESSOR_H
+#pragma once
 
 #include "GafferImage/ImageProcessor.h"
 
@@ -52,10 +51,10 @@ class GAFFERIMAGE_API ChannelDataProcessor : public ImageProcessor
 
 	public :
 
-		ChannelDataProcessor( const std::string &name=defaultName<ChannelDataProcessor>(), bool premultiplyPlug = false );
+		explicit ChannelDataProcessor( const std::string &name=defaultName<ChannelDataProcessor>(), bool premultiplyPlug = false );
 		~ChannelDataProcessor() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::ChannelDataProcessor, ChannelDataProcessorTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::ChannelDataProcessor, ChannelDataProcessorTypeId, ImageProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -94,5 +93,3 @@ class GAFFERIMAGE_API ChannelDataProcessor : public ImageProcessor
 IE_CORE_DECLAREPTR( ChannelDataProcessor )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_CHANNELDATAPROCESSOR_H

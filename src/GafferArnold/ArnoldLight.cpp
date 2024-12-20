@@ -37,20 +37,6 @@
 #include "GafferArnold/ArnoldLight.h"
 
 #include "GafferArnold/ArnoldShader.h"
-#include "GafferArnold/ParameterHandler.h"
-
-#include "GafferScene/Shader.h"
-
-#include "Gaffer/PlugAlgo.h"
-#include "Gaffer/StringPlug.h"
-
-#include "IECoreArnold/UniverseBlock.h"
-
-#include "IECoreScene/ShaderNetworkAlgo.h"
-
-#include "IECore/Exception.h"
-
-#include "boost/format.hpp"
 
 using namespace std;
 using namespace IECore;
@@ -58,7 +44,7 @@ using namespace Gaffer;
 using namespace GafferScene;
 using namespace GafferArnold;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ArnoldLight );
+GAFFER_NODE_DEFINE_TYPE( ArnoldLight );
 
 size_t ArnoldLight::g_firstPlugIndex = 0;
 

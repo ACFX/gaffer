@@ -46,7 +46,7 @@ using namespace GafferScene;
 
 size_t MeshDistortion::g_firstPlugIndex = 0;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( MeshDistortion );
+GAFFER_NODE_DEFINE_TYPE( MeshDistortion );
 
 MeshDistortion::MeshDistortion( const std::string &name )
 	:	ObjectProcessor( name )
@@ -164,7 +164,8 @@ IECore::ConstObjectPtr MeshDistortion::computeProcessedObject( const ScenePath &
 		mesh,
 		uvSet,
 		referencePosition,
-		position
+		position,
+		context->canceller()
 	);
 
 	MeshPrimitivePtr result = mesh->copy();

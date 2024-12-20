@@ -37,9 +37,14 @@
 
 import weakref
 import imath
+import functools
+
+import IECore
 
 import Gaffer
 import GafferUI
+from GafferUI.PlugValueWidget import sole
+from GafferUI.ColorChooserPlugValueWidget import saveDefaultOptions
 
 class ColorSwatchPlugValueWidget( GafferUI.PlugValueWidget ) :
 
@@ -51,15 +56,14 @@ class ColorSwatchPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		## \todo How do set maximum height with a public API?
 		self.__swatch._qtWidget().setMaximumHeight( 20 )
+		self.__swatch._qtWidget().setFixedWidth( 40 )
 
 		self._addPopupMenu( self.__swatch )
 
-		self.__swatch.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
-		self.__swatch.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
-		self.__swatch.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
-		self.__swatch.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ), scoped = False )
-
-		self._updateFromPlugs()
+		self.__swatch.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
+		self.__swatch.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
+		self.__swatch.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
+		self.__swatch.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) )
 
 	def setHighlighted( self, highlighted ) :
 
@@ -67,12 +71,10 @@ class ColorSwatchPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		self.__swatch.setHighlighted( highlighted )
 
-	def _updateFromPlugs( self ) :
+	def _updateFromValues( self, values, exception ) :
 
-		with self.getContext() :
-			value = _colorFromPlugs( self.getPlugs() )
-
-		self.__swatch.setColor( value )
+		self.__swatch.setErrored( exception is not None )
+		self.__swatch.setColor( _averageColor( values ) )
 
 	def __buttonPress( self, widget, event ) :
 
@@ -103,15 +105,19 @@ class ColorSwatchPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		return True
 
-def _colorFromPlugs( plugs ) :
+def _averageColor( colors ) :
 
-	if not len( plugs ) :
+	if not len( colors ) :
 		return imath.Color4f( 0 )
+
+	return sum( colors ) / len( colors )
+
+def _colorFromPlugs( plugs ) :
 
 	# ColorSwatch only supports one colour, and doesn't have
 	# an "indeterminate" state, so when we have multiple plugs
 	# the best we can do is take an average.
-	return sum( p.getValue() for p in plugs ) / len( plugs )
+	return _averageColor( [ p.getValue() for p in plugs ] )
 
 ## \todo Perhaps we could make this a part of the public API? Perhaps we could also make a
 # PlugValueDialogue base class to share some of the work with the dialogue made by the
@@ -130,17 +136,34 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 		self.__lastChangedReason = None
 		self.__mergeGroupId = 0
 
-		self.__colorChangedConnection = self.colorChooser().colorChangedSignal().connect( Gaffer.WeakMethod( self.__colorChanged ), scoped = False )
-		self.confirmButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
-		self.cancelButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
+		self.__colorChangedConnection = self.colorChooser().colorChangedSignal().connect( Gaffer.WeakMethod( self.__colorChanged ) )
+
+		self.colorChooser().visibleComponentsChangedSignal().connect(
+			functools.partial( Gaffer.WeakMethod( self.__colorChooserVisibleComponentsChanged ) )
+		)
+		self.colorChooser().staticComponentChangedSignal().connect(
+			functools.partial( Gaffer.WeakMethod( self.__colorChooserStaticComponentChanged ) )
+		)
+		self.colorChooser().colorFieldVisibleChangedSignal().connect(
+			functools.partial( Gaffer.WeakMethod( self.__colorChooserColorFieldVisibleChanged ) )
+		)
+		self.colorChooser().dynamicSliderBackgroundsChangedSignal().connect(
+			functools.partial( Gaffer.WeakMethod( self.__dynamicSliderBackgroundsChanged ) )
+		)
+		self.colorChooser().optionsMenuSignal().connect(
+			functools.partial( Gaffer.WeakMethod( self.__colorChooserOptionsMenu ) )
+		)
+
+		self.confirmButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
+		self.cancelButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
 
 		self.__plugs = plugs
 		self.__initialValues = { p : p.getValue() for p in self.__plugs }
 
 		nodes = { p.node() for p in self.__plugs }
-		self.__plugSetConnections = [ n.plugSetSignal().connect( Gaffer.WeakMethod( self.__plugSet ), scoped = False ) for n in nodes ]
+		self.__plugSetConnections = [ n.plugSetSignal().connect( Gaffer.WeakMethod( self.__plugSet ) ) for n in nodes ]
 		for node in nodes :
-			node.parentChangedSignal().connect( Gaffer.WeakMethod( self.__destroy ), scoped = False )
+			node.parentChangedSignal().connect( Gaffer.WeakMethod( self.__destroy ) )
 
 		plug = next( iter( self.__plugs ) )
 		if len( self.__plugs ) == 1 :
@@ -150,6 +173,22 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 
 		self.__plugSet( plug )
 
+		visibleComponents = self.__colorChooserOption( "visibleComponents" )
+		if visibleComponents is not None :
+			self.colorChooser().setVisibleComponents( visibleComponents )
+
+		staticComponent = self.__colorChooserOption( "staticComponent" )
+		if staticComponent is not None :
+			self.colorChooser().setColorFieldStaticComponent( staticComponent )
+
+		colorFieldVisible = self.__colorChooserOption( "colorFieldVisible" )
+		if colorFieldVisible is not None :
+			self.colorChooser().setColorFieldVisible( colorFieldVisible )
+
+		dynamicSliderBackgrounds = self.__colorChooserOption( "dynamicSliderBackgrounds" )
+		if dynamicSliderBackgrounds is not None :
+			self.colorChooser().setDynamicSliderBackgrounds( dynamicSliderBackgrounds )
+
 		parentWindow.addChildWindow( self, removeOnClose = True )
 
 	@classmethod
@@ -158,6 +197,14 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 		plug = next( iter( plugs ) )
 
 		script = plug.node().scriptNode()
+		if script is None :
+			# Plug might be part of the UI rather than the node graph (e.g. a
+			# Tool or View setting). Find the script.
+			view = plug.ancestor( GafferUI.View )
+			if view is not None :
+				script = view["in"].getInput().node().scriptNode()
+
+		assert( script is not None )
 		scriptWindow = GafferUI.ScriptWindow.acquire( script )
 
 		for window in scriptWindow.childWindows() :
@@ -172,7 +219,7 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 	def __plugSet( self, plug ) :
 
 		if plug in self.__plugs :
-			with Gaffer.BlockedConnection( self.__colorChangedConnection ) :
+			with Gaffer.Signals.BlockedConnection( self.__colorChangedConnection ) :
 				self.colorChooser().setColor( _colorFromPlugs( self.__plugs ) )
 
 	def __colorChanged( self, colorChooser, reason ) :
@@ -186,7 +233,7 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 			mergeGroup = "ColorPlugValueDialogue%d%d" % ( id( self, ), self.__mergeGroupId )
 		) :
 
-			with Gaffer.BlockedConnection( self.__plugSetConnections ) :
+			with Gaffer.Signals.BlockedConnection( self.__plugSetConnections ) :
 				for plug in self.__plugs :
 					plug.setValue( self.colorChooser().getColor() )
 
@@ -197,16 +244,56 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 				for p, v in self.__initialValues.items() :
 					p.setValue( v )
 
-		# ideally we'd just remove ourselves from our parent immediately, but that would
-		# trigger this bug :
-		#
-		# 	https://bugreports.qt-project.org/browse/QTBUG-26761
-		#
-		# so instead we destroy ourselves on the next idle event.
+		self.parent().removeChild( self )
+		# Workaround for https://bugreports.qt-project.org/browse/QTBUG-26761.
+		assert( not self.visible() )
+		GafferUI.WidgetAlgo.keepUntilIdle( self )
 
-		GafferUI.EventLoop.addIdleCallback( self.__destroy )
+	def __colorChooserOptionsMenu( self, colorChooser, menuDefinition ) :
+
+		menuDefinition.append( "/__saveDefaultOptions__", { "divider": True, "label": "Defaults" } )
+
+		menuDefinition.append(
+			"/Save Default Dialogue Layout",
+			{
+				"command": functools.partial(
+					saveDefaultOptions,
+					colorChooser,
+					"colorChooser:dialogue:",
+					self.ancestor( GafferUI.ScriptWindow ).scriptNode().applicationRoot().preferencesLocation() / "__colorChooser.py"
+				)
+			}
+		)
 
 	def __destroy( self, *unused ) :
 
 		self.parent().removeChild( self )
-		return False # to remove idle callback
+
+	# \todo Extract these two methods to share with `ColorChooserPlugValueWidget` which has
+	# an almost identical implementation.
+
+	def __colorChooserOptionChanged( self, keySuffix, value ) :
+
+		for p in self.__plugs :
+			Gaffer.Metadata.deregisterValue( p, "colorChooser:dialogue:" + keySuffix )
+			Gaffer.Metadata.registerValue( p, "colorChooser:dialogue:" + keySuffix, value, persistent = False )
+
+	def __colorChooserOption( self, keySuffix ) :
+
+		return sole( Gaffer.Metadata.value( p, "colorChooser:dialogue:" + keySuffix ) for p in self.__plugs )
+
+	def __colorChooserVisibleComponentsChanged( self, colorChooser ) :
+
+		self.__colorChooserOptionChanged( "visibleComponents", colorChooser.getVisibleComponents() )
+
+	def __colorChooserStaticComponentChanged( self, colorChooser ) :
+
+		self.__colorChooserOptionChanged( "staticComponent", colorChooser.getColorFieldStaticComponent() )
+
+	def __colorChooserColorFieldVisibleChanged( self, colorChooser ) :
+
+		self.__colorChooserOptionChanged( "colorFieldVisible", colorChooser.getColorFieldVisible() )
+
+	def __dynamicSliderBackgroundsChanged( self, colorChooser ) :
+
+		self.__colorChooserOptionChanged( "dynamicSliderBackgrounds", colorChooser.getDynamicSliderBackgrounds() )

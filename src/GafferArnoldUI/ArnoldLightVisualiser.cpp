@@ -50,7 +50,8 @@
 #include "IECore/TypedData.h"
 #include "IECore/VectorTypedData.h"
 
-#include "ai.h"
+#include "ai_version.h"
+#include "ai_shader_lights.h"
 
 using namespace Imath;
 using namespace IECore;
@@ -101,7 +102,7 @@ struct SurfaceTextureCacheGetterKey
 	MurmurHash hash;
 };
 
-CompoundDataPtr surfaceTextureGetter( const SurfaceTextureCacheGetterKey &key, size_t &cost )
+CompoundDataPtr surfaceTextureGetter( const SurfaceTextureCacheGetterKey &key, size_t &cost, const IECore::Canceller *canceller )
 {
 	cost = key.resolution.x * key.resolution.y * 3 * 4; // 3 x 32bit float channels;
 
@@ -112,7 +113,7 @@ CompoundDataPtr surfaceTextureGetter( const SurfaceTextureCacheGetterKey &key, s
 	return nullptr;
 }
 
-typedef IECorePreview::LRUCache<IECore::MurmurHash, CompoundDataPtr, IECorePreview::LRUCachePolicy::Parallel, SurfaceTextureCacheGetterKey> SurfaceTextureCache;
+using SurfaceTextureCache = IECorePreview::LRUCache<IECore::MurmurHash, CompoundDataPtr, IECorePreview::LRUCachePolicy::Parallel, SurfaceTextureCacheGetterKey>;
 // Cache cost is in bytes
 SurfaceTextureCache g_surfaceTextureCache( surfaceTextureGetter, 1024 * 1024 * 64 );
 
@@ -122,11 +123,6 @@ SurfaceTextureCache g_surfaceTextureCache( surfaceTextureGetter, 1024 * 1024 * 6
 
 IECoreGL::RenderablePtr iesVisualisation( const std::string &filename )
 {
-
-#if AI_VERSION_ARCH_NUM < 6
-	return nullptr;
-#else
-
 	// It's not entirely clear from rendered results exactly how radius
 	// interacts with the profile, so we just draw the normalised distribution
 	// of the profile.
@@ -171,15 +167,13 @@ IECoreGL::RenderablePtr iesVisualisation( const std::string &filename )
 	IECoreGL::PointsPrimitivePtr points = new IECoreGL::PointsPrimitive( IECoreGL::PointsPrimitive::Point );
 	points->addPrimitiveVariable( "P", PrimitiveVariable( PrimitiveVariable::Interpolation::Vertex, pData ) );
 	return points;
-
-#endif
 }
 
 //////////////////////////////////////////////////////////////////////////
 // ArnoldLightVisualiser implementation
 //////////////////////////////////////////////////////////////////////////
 
-class GAFFERSCENEUI_API ArnoldLightVisualiser : public GafferSceneUI::StandardLightVisualiser
+class ArnoldLightVisualiser : public GafferSceneUI::StandardLightVisualiser
 {
 
 	public :
@@ -193,7 +187,7 @@ class GAFFERSCENEUI_API ArnoldLightVisualiser : public GafferSceneUI::StandardLi
 
 	protected :
 
-		IECore::DataPtr surfaceTexture( const IECoreScene::ShaderNetwork *shaderNetwork, const IECore::CompoundObject *attributes, int maxTextureResolution ) const override;
+		IECore::DataPtr surfaceTexture( const IECore::InternedString &attributeName, const IECoreScene::ShaderNetwork *shaderNetwork, const IECore::CompoundObject *attributes, int maxTextureResolution ) const override;
 
 	private :
 
@@ -242,7 +236,7 @@ Visualisations ArnoldLightVisualiser::visualise( const IECore::InternedString &a
 	return v;
 }
 
-IECore::DataPtr ArnoldLightVisualiser::surfaceTexture( const IECoreScene::ShaderNetwork *shaderNetwork, const IECore::CompoundObject *attributes, int maxTextureResolution ) const
+IECore::DataPtr ArnoldLightVisualiser::surfaceTexture( const IECore::InternedString &attributeName, const IECoreScene::ShaderNetwork *shaderNetwork, const IECore::CompoundObject *attributes, int maxTextureResolution ) const
 {
 	const ShaderNetwork::Parameter &output = shaderNetwork->getOutput();
 	if( !output )
@@ -251,7 +245,7 @@ IECore::DataPtr ArnoldLightVisualiser::surfaceTexture( const IECoreScene::Shader
 	}
 
 	const IECoreScene::Shader *outputShader = shaderNetwork->outputShader();
-	const IECore::InternedString metadataTarget = outputShader->getType() + ":" + outputShader->getName();
+	const IECore::InternedString metadataTarget = "ai:light:" + outputShader->getName();
 
 	ConstStringDataPtr colorParamData = Gaffer::Metadata::value<StringData>( metadataTarget, "colorParameter" );
 	if( !colorParamData )
@@ -292,4 +286,3 @@ IECore::DataPtr ArnoldLightVisualiser::surfaceTexture( const IECoreScene::Shader
 }
 
 }
-

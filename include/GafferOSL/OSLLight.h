@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFEROSL_OSLLIGHT_H
-#define GAFFEROSL_OSLLIGHT_H
+#pragma once
 
 #include "GafferOSL/Export.h"
 #include "GafferOSL/TypeIds.h"
@@ -55,9 +54,9 @@ class GAFFEROSL_API OSLLight : public GafferScene::Light
 
 	public :
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferOSL::OSLLight, OSLLightTypeId, GafferScene::Light );
+		GAFFER_NODE_DECLARE_TYPE( GafferOSL::OSLLight, OSLLightTypeId, GafferScene::Light );
 
-		OSLLight( const std::string &name=defaultName<OSLLight>() );
+		explicit OSLLight( const std::string &name=defaultName<OSLLight>() );
 		~OSLLight() override;
 
 		Gaffer::StringPlug *shaderNamePlug();
@@ -118,5 +117,3 @@ class GAFFEROSL_API OSLLight : public GafferScene::Light
 IE_CORE_DECLAREPTR( OSLLight )
 
 } // namespace GafferOSL
-
-#endif // GAFFEROSL_OSLLIGHT_H

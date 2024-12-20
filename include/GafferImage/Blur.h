@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_BLUR_H
-#define GAFFERIMAGE_BLUR_H
+#pragma once
 
 #include "GafferImage/FlatImageProcessor.h"
 
@@ -50,10 +49,10 @@ class GAFFERIMAGE_API Blur : public FlatImageProcessor
 {
 	public :
 
-		Blur( const std::string &name=defaultName<Blur>() );
+		explicit Blur( const std::string &name=defaultName<Blur>() );
 		~Blur() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Blur, BlurTypeId, FlatImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Blur, BlurTypeId, FlatImageProcessor );
 
 		Gaffer::V2fPlug *radiusPlug();
 		const Gaffer::V2fPlug *radiusPlug() const;
@@ -100,5 +99,3 @@ class GAFFERIMAGE_API Blur : public FlatImageProcessor
 IE_CORE_DECLAREPTR( Blur )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_BLUR_H

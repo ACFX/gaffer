@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_ORIENTATION_H
-#define GAFFERSCENE_ORIENTATION_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -54,10 +53,10 @@ class GAFFERSCENE_API Orientation : public ObjectProcessor
 
 	public :
 
-		Orientation( const std::string &name=defaultName<Orientation>() );
+		explicit Orientation( const std::string &name=defaultName<Orientation>() );
 		~Orientation() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Orientation, OrientationTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Orientation, OrientationTypeId, ObjectProcessor );
 
 		enum class Mode
 		{
@@ -194,6 +193,11 @@ class GAFFERSCENE_API Orientation : public ObjectProcessor
 		Gaffer::StringPlug *outMatrixPlug();
 		const Gaffer::StringPlug *outMatrixPlug() const;
 
+		// Normalize a quaternion if it is not already normalized. Values within tolerance of being
+		// normalized are passed through unmodified. The tolerance is calibrated so that any quaternion
+		// produced by Imath::Quatf::normalized() should be unmodified.
+		static inline Imath::Quatf normalizedIfNeeded( const Imath::Quatf &q );
+
 	protected :
 
 		bool affectsProcessedObject( const Gaffer::Plug *input ) const override;
@@ -210,4 +214,4 @@ IE_CORE_DECLAREPTR( Orientation )
 
 } // namespace GafferScene
 
-#endif // GAFFERSCENE_ORIENTATION_H
+#include "GafferScene/Orientation.inl"

@@ -48,7 +48,6 @@
 #include "GafferUI/Pointer.h"
 #include "GafferUI/Style.h"
 
-#include "Gaffer/BlockedConnection.h"
 #include "Gaffer/Metadata.h"
 #include "Gaffer/MetadataAlgo.h"
 #include "Gaffer/ScriptNode.h"
@@ -57,8 +56,9 @@
 
 #include "IECore/NullObject.h"
 
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 
+using namespace boost::placeholders;
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
@@ -117,7 +117,7 @@ GafferScene::ScenePlug *findSceneForImage( GafferImage::ImagePlug *image, std::s
 /// \todo This should become a public public class that
 /// could be reused in other tools. The main obstacle
 /// to that is that this is hardcoded to work in raster
-/// space - see comments in doRender() for ideas as to
+/// space - see comments in renderLayer() for ideas as to
 /// how we could avoid that.
 class CropWindowTool::Rectangle : public GafferUI::Gadget
 {
@@ -147,7 +147,6 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 
 		Imath::Box3f bound() const override
 		{
-			return Box3f();
 			if( m_rasterSpace )
 			{
 				// We draw in raster space so don't have a sensible bound
@@ -189,7 +188,7 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 				return;
 			}
 			m_masked = masked;
-			requestRender();
+			dirty( DirtyType::Render );
 		}
 
 		bool getMasked() const
@@ -197,7 +196,7 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 			return m_masked;
 		}
 
-		typedef boost::signal<void ( Rectangle *, RectangleChangedReason )> UnarySignal;
+		using UnarySignal = Signals::Signal<void ( Rectangle *, RectangleChangedReason )>;
 		UnarySignal &rectangleChangedSignal()
 		{
 			return m_rectangleChangedSignal;
@@ -205,9 +204,9 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 
 	protected :
 
-		void doRenderLayer( Layer layer, const Style *style ) const override
+		void renderLayer( Layer layer, const Style *style, RenderReason reason ) const override
 		{
-			if( layer != Layer::Main )
+			if( layer != Layer::Front )
 			{
 				return;
 			}
@@ -222,7 +221,7 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 			/// raster scope bit manually? Maybe that would let us write more reusable
 			/// gadgets, which could be used in any space, and we wouldn't need
 			/// eventPosition().
-			boost::optional<ViewportGadget::RasterScope> rasterScope;
+			std::optional<ViewportGadget::RasterScope> rasterScope;
 			if( m_rasterSpace )
 			{
 				rasterScope.emplace( ancestor<ViewportGadget>() );
@@ -230,7 +229,7 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 
 			glPushAttrib( GL_CURRENT_BIT | GL_LINE_BIT | GL_ENABLE_BIT );
 
-				if( IECoreGL::Selector::currentSelector() )
+				if( isSelectionRender( reason ) )
 				{
 					if( m_editable )
 					{
@@ -271,6 +270,28 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 
 		}
 
+		unsigned layerMask() const override
+		{
+			return (unsigned)Layer::Front;
+		}
+
+		Imath::Box3f renderBound() const override
+		{
+			if( m_rasterSpace || m_editable || m_masked )
+			{
+				// We don't have a sensible bound when we're drawing
+				// in raster space or drawing an "infinite" mask outside
+				// the rectangle.
+				Box3f b;
+				b.makeInfinite();
+				return b;
+			}
+			else
+			{
+				return bound();
+			}
+		}
+
 	private :
 
 		void setRectangleInternal( const Imath::Box2f &rectangle, RectangleChangedReason reason )
@@ -284,8 +305,8 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 				return;
 			}
 			m_rectangle = rectangle;
+			dirty( DirtyType::Bound );
 			rectangleChangedSignal()( this, reason );
-			requestRender();
 		}
 
 		bool mouseMove( const ButtonEvent &event )
@@ -486,7 +507,7 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 // CropWindowTool implementation
 //////////////////////////////////////////////////////////////////////////
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CropWindowTool );
+GAFFER_NODE_DEFINE_TYPE( CropWindowTool );
 
 size_t CropWindowTool::g_firstPlugIndex = 0;
 CropWindowTool::ToolDescription<CropWindowTool, SceneView> CropWindowTool::g_sceneToolDescription;
@@ -515,6 +536,8 @@ CropWindowTool::CropWindowTool( View *view, const std::string &name )
 
 	Metadata::plugValueChangedSignal().connect( boost::bind( &CropWindowTool::metadataChanged, this, ::_3 ) );
 	Metadata::nodeValueChangedSignal().connect( boost::bind( &CropWindowTool::metadataChanged, this, ::_2 ) );
+
+	view->viewportGadget()->keyPressSignal().connect( boost::bind( &CropWindowTool::keyPress, this, ::_2 ) );
 }
 
 CropWindowTool::~CropWindowTool()
@@ -529,6 +552,18 @@ std::string CropWindowTool::status() const
 CropWindowTool::StatusChangedSignal &CropWindowTool::statusChangedSignal()
 {
 	return m_statusChangedSignal;
+}
+
+Gaffer::Box2fPlug *CropWindowTool::plug()
+{
+	findCropWindowPlug();
+	return m_cropWindowPlug.get();
+}
+
+Gaffer::BoolPlug *CropWindowTool::enabledPlug()
+{
+	findCropWindowPlug();
+	return m_cropWindowEnabledPlug.get();
 }
 
 GafferScene::ScenePlug *CropWindowTool::scenePlug()
@@ -704,7 +739,7 @@ void CropWindowTool::overlayRectangleChanged( unsigned reason )
 		flipNDCOrigin( b );
 	}
 
-	UndoScope undoScope( m_cropWindowPlug->ancestor<ScriptNode>() );
+	UndoScope undoScope( view()->scriptNode() );
 
 	if( m_cropWindowEnabledPlug && !m_cropWindowEnabledPlug->getValue() )
 	{
@@ -723,66 +758,75 @@ void CropWindowTool::preRender()
 		return;
 	}
 
-	const Box2f r = resolutionGate();
-
-	if( runTimeCast<SceneView>( view() ) )
+	try
 	{
-		// This is the only check we have that tells us whether we have an
-		// appropriate camera to support the presentation of a crop window.
-		// We don't have any other signals tied to this, hence the need to
-		// check here before render.
-		if( r.isEmpty() )
+		const Box2f r = resolutionGate();
+
+		if( runTimeCast<SceneView>( view() ) )
 		{
-			setErrorMessage( "Error: No applicable crop window for this view" );
+			// This is the only check we have that tells us whether we have an
+			// appropriate camera to support the presentation of a crop window.
+			// We don't have any other signals tied to this, hence the need to
+			// check here before render.
+			if( r.isEmpty() )
+			{
+				setErrorMessage( "Error: No applicable crop window for this view" );
+				setOverlayVisible( false );
+				return;
+			}
+
+			setOverlayVisible( true );
+		}
+
+		if( !m_overlayDirty )
+		{
+			return;
+		}
+		m_overlayDirty = false;
+
+		findScenePlug();
+
+		// This occurs in the ImageView hosted case, when we don't know which node
+		// may have rendered the image being viewed.
+		if( !scenePlug()->getInput() )
+		{
 			setOverlayVisible( false );
 			return;
 		}
 
-		setOverlayVisible( true );
-	}
+		Box2f cropWindow( V2f( 0 ), V2f( 1 ) );
+		findCropWindowPlug();
+		if( m_cropWindowPlug )
+		{
+			cropWindow = m_cropWindowPlug->getValue();
+		}
+		if( runTimeCast<ImageView>( view() ) )
+		{
+			flipNDCOrigin( cropWindow );
+		}
 
-	if( !m_overlayDirty )
-	{
-		return;
-	}
-	m_overlayDirty = false;
-
-	findScenePlug();
-
-	// This occurs in the ImageView hosted case, when we don't know which node
-	// may have rendered the image being viewed.
-	if( !scenePlug()->getInput() )
-	{
-		setOverlayVisible( false );
-		return;
-	}
-
-	Box2f cropWindow( V2f( 0 ), V2f( 1 ) );
-	findCropWindowPlug();
-	if( m_cropWindowPlug )
-	{
-		cropWindow = m_cropWindowPlug->getValue();
-	}
-	if( runTimeCast<ImageView>( view() ) )
-	{
-		flipNDCOrigin( cropWindow );
-	}
-
-	BlockedConnection blockedConnection( m_overlayRectangleChangedConnection );
-	m_overlay->setRectangle(
-		Box2f(
-			V2f(
-				lerp( r.min.x, r.max.x, cropWindow.min.x ),
-				lerp( r.min.y, r.max.y, cropWindow.min.y )
-			),
-			V2f(
-				lerp( r.min.x, r.max.x, cropWindow.max.x ),
-				lerp( r.min.y, r.max.y, cropWindow.max.y )
+		Signals::BlockedConnection blockedConnection( m_overlayRectangleChangedConnection );
+		m_overlay->setRectangle(
+			Box2f(
+				V2f(
+					lerp( r.min.x, r.max.x, cropWindow.min.x ),
+					lerp( r.min.y, r.max.y, cropWindow.min.y )
+				),
+				V2f(
+					lerp( r.min.x, r.max.x, cropWindow.max.x ),
+					lerp( r.min.y, r.max.y, cropWindow.max.y )
+				)
 			)
-		)
-	);
+		);
 
-	setOverlayVisible( true );
+		setOverlayVisible( true );
+
+	}
+	catch( const std::exception &e )
+	{
+		setErrorMessage( std::string("Error: ") + e.what() );
+		setOverlayVisible( false );
+	}
 }
 
 void CropWindowTool::findScenePlug()
@@ -795,7 +839,18 @@ void CropWindowTool::findScenePlug()
 	if( runTimeCast<ImageView>( view() ) )
 	{
 		std::string msg;
-		ScenePlug *scene = findSceneForImage( imagePlug(), msg );
+		ScenePlug *scene = nullptr;
+
+		try
+		{
+			Context::Scope scopedContext( view()->context() );
+			scene = findSceneForImage( imagePlug(), msg );
+		}
+		catch( const std::exception &e )
+		{
+			msg = std::string( "Error: " ) + e.what();
+		}
+
 		scenePlug()->setInput( scene );
 		if( !scene )
 		{
@@ -817,55 +872,71 @@ void CropWindowTool::findCropWindowPlug()
 
 	m_cropWindowPlug = nullptr;
 
-	Context::Scope scopedContext( view()->getContext() );
+	Context::Scope scopedContext( view()->context() );
 
 	findScenePlug();
 
-	const GafferScene::ScenePlug::ScenePath rootPath;
-	SceneAlgo::History::Ptr history = SceneAlgo::history( scenePlug()->globalsPlug(), rootPath );
-	const bool foundAnEnabledPlug = findCropWindowPlug( history.get(), /* enabledOnly = */ true );
-	// If we didn't find an enabled cropWindow plug upstream, or we did and it's
-	// read-only, look again for any other plugs that could be edited, but aren't
-	// enabled yet. We'll enable it if the user makes an edit.
-	if( !foundAnEnabledPlug || MetadataAlgo::readOnly( m_cropWindowPlug.get() ) )
+	try
 	{
-		findCropWindowPlug( history.get(), /* enabledOnly = */ false );
-	}
-
-	if( m_cropWindowPlug )
-	{
-		const std::string plugName =  m_cropWindowPlug->relativeName( m_cropWindowPlug->ancestor<ScriptNode>() );
-
-		// Even after the second search, we could still be read-only
-		if( MetadataAlgo::readOnly( m_cropWindowPlug.get() ) )
+		const GafferScene::ScenePlug::ScenePath rootPath;
+		SceneAlgo::History::Ptr history = SceneAlgo::history( scenePlug()->globalsPlug(), rootPath );
+		const bool foundAnEnabledPlug = findCropWindowPlug( history.get(), /* enabledOnly = */ true );
+		// If we didn't find an enabled cropWindow plug upstream, or we did and it's
+		// read-only, look again for any other plugs that could be edited, but aren't
+		// enabled yet. We'll enable it if the user makes an edit.
+		if( !foundAnEnabledPlug || MetadataAlgo::readOnly( m_cropWindowPlug.get() ) )
 		{
-			m_overlay->setEditable( false );
-			setOverlayMessage( "Warning: <b>" + plugName + "</b> is locked" );
+			findCropWindowPlug( history.get(), /* enabledOnly = */ false );
+		}
+
+		if( m_cropWindowPlug )
+		{
+			const std::string plugName =  m_cropWindowPlug->relativeName( m_cropWindowPlug->ancestor<ScriptNode>() );
+
+			// Even after the second search, we could still be read-only
+			if( MetadataAlgo::readOnly( m_cropWindowPlug.get() ) )
+			{
+				m_overlay->setEditable( false );
+				setOverlayMessage( "Warning: <b>" + plugName + "</b> is locked" );
+			}
+			else
+			{
+				bool plugEditable = m_cropWindowPlug->settable();
+
+				// If our cropWindow plug hasn't been enabled, we need to check if it's corresponding 'enabled'
+				// plug is editable, it could be expressioned or locked even if our value plug isn't.
+				if( m_cropWindowEnabledPlug && m_cropWindowEnabledPlug->getValue() == false )
+				{
+					plugEditable &= ( m_cropWindowEnabledPlug->settable() && !MetadataAlgo::readOnly( m_cropWindowEnabledPlug.get() ) );
+				}
+
+				m_overlay->setEditable( plugEditable );
+				setOverlayMessage( plugEditable
+					? ( "Info: Editing <b>" + plugName + "</b>" )
+					: ( "Warning: <b>" + plugName + "</b> isn't editable" )
+				);
+			}
+
+			m_cropWindowPlugDirtiedConnection = m_cropWindowPlug->node()->plugDirtiedSignal().connect( boost::bind( &CropWindowTool::plugDirtied, this, ::_1 ) );
 		}
 		else
 		{
-			bool plugEditable = m_cropWindowPlug->settable();
-
-			// If our cropWindow plug hasn't been enabled, we need to check if it's corresponding 'enabled'
-			// plug is editable, it could be expressioned or locked even if our value plug isn't.
-			if( m_cropWindowEnabledPlug && m_cropWindowEnabledPlug->getValue() == false )
-			{
-				plugEditable &= ( m_cropWindowEnabledPlug->settable() && !MetadataAlgo::readOnly( m_cropWindowEnabledPlug.get() ) );
-			}
-
-			m_overlay->setEditable( plugEditable );
-			setOverlayMessage( plugEditable
-				? ( "Info: Editing <b>" + plugName + "</b>" )
-				: ( "Warning: <b>" + plugName + "</b> isn't editable" )
-			);
+			// Though this is an 'error' for the user, `setErrorMessage` is used in situations when the
+			// tool has failed such that the overlay is hidden. As we still show the overlay without a plug
+			// (as the crop is still defined in the scene), we use the overlay message instead.
+			setOverlayMessage( "Error: No crop window found. Insert a <b>StandardOptions</b> node." );
 		}
 
-		m_cropWindowPlugDirtiedConnection = m_cropWindowPlug->node()->plugDirtiedSignal().connect( boost::bind( &CropWindowTool::plugDirtied, this, ::_1 ) );
 	}
-	else
+	catch( const std::exception &e )
+	{
+		m_cropWindowPlug = nullptr;
+		setOverlayMessage( std::string("Error: ") + e.what() );
+	}
+
+	if( !m_cropWindowPlug )
 	{
 		m_overlay->setEditable( false );
-		setOverlayMessage( "Error: No crop window found. Insert a <b>StandardOptions</b> node." );
 		m_cropWindowPlugDirtiedConnection.disconnect();
 	}
 
@@ -904,7 +975,7 @@ bool CropWindowTool::findCropWindowPlugFromNode( GafferScene::ScenePlug *scene, 
 		return false;
 	}
 
-	for( NameValuePlugIterator it( options->optionsPlug() ); !it.done(); ++it )
+	for( NameValuePlug::Iterator it( options->optionsPlug() ); !it.done(); ++it )
 	{
 		NameValuePlug *memberPlug = it->get();
 		if( memberPlug->namePlug()->getValue() != "render:cropWindow" )
@@ -941,10 +1012,30 @@ Box2f CropWindowTool::resolutionGate() const
 	{
 		if( const ImagePlug *in = imageView->inPlug<ImagePlug>() )
 		{
-			Context::Scope contextScope( imageView->getContext() );
-			const Format format = in->format();
+			Context::Scope contextScope( imageView->context() );
+			const std::string view = imageView->viewPlug()->getValue();
+			const Format format = in->format( &view );
 			resolutionGate = Box2f( V2f( 0 ), V2f( format.width() * format.getPixelAspect(), format.height() ) );
 		}
 	}
 	return resolutionGate;
+}
+
+bool CropWindowTool::keyPress( const KeyEvent &event )
+{
+	if( const auto hotkey = Gaffer::Metadata::value<StringData>( this, "viewer:shortCut" ) )
+	{
+		if( event.key == hotkey->readable() && event.modifiers == KeyEvent::Modifiers::Alt )
+		{
+			const bool newState = !activePlug()->getValue();
+
+			activePlug()->setValue( newState );
+			if( m_cropWindowEnabledPlug )
+			{
+				UndoScope undoScope( view()->scriptNode() );
+				m_cropWindowEnabledPlug->setValue( newState );
+			}
+		}
+	}
+	return false;
 }

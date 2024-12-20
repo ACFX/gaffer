@@ -45,11 +45,12 @@
 #include "IECoreScene/ShaderNetwork.h"
 #include "IECore/StringAlgo.h"
 
-#include "OpenEXR/ImathColorAlgo.h"
-#include "OpenEXR/ImathRandom.h"
+#include "Imath/ImathColorAlgo.h"
+#include "Imath/ImathRandom.h"
 
 #include "boost/algorithm/string/predicate.hpp"
 
+#include "fmt/format.h"
 
 using namespace Imath;
 using namespace IECore;
@@ -62,16 +63,16 @@ namespace
 
 bool internedStringCompare( InternedString a, InternedString b )
 {
-    return a.string() < b.string();
+	return a.string() < b.string();
 }
 
-typedef std::pair<StringAlgo::MatchPattern, ConstColor3fDataPtr> Override;
+using Override = std::pair<StringAlgo::MatchPattern, ConstColor3fDataPtr>;
 std::vector<Override> unpackOverrides( const CompoundDataPlug *plug )
 {
 	std::vector<Override> overrides;
 
 	std::string name;
-	for( NameValuePlugIterator it( plug ); !it.done(); ++it )
+	for( NameValuePlug::Iterator it( plug ); !it.done(); ++it )
 	{
 		// This will fail if the member has been disabled, or has no name
 		if( ConstDataPtr plugData =  plug->memberDataAndName( it->get(), name ) )
@@ -82,9 +83,9 @@ std::vector<Override> unpackOverrides( const CompoundDataPlug *plug )
 			}
 			else
 			{
-				throw IECore::Exception( boost::str( boost::format(
-					"Color Override value for \"%s\" is not a Color3f") % name )
-				);
+				throw IECore::Exception( fmt::format(
+					"Color Override value for \"{}\" is not a Color3f", name
+				) );
 			}
 		}
 	}
@@ -116,14 +117,12 @@ Color3f colorForSetName( const InternedString &name, const std::vector<Override>
 // We're limited in our target GLSL version to fixed size shader array params
 size_t g_maxShaderColors = 9;
 
-static const StringDataPtr fragmentSource()
+const StringDataPtr fragmentSource()
 {
 	static StringDataPtr g_fragmentSource = new IECore::StringData(
 		"#if __VERSION__ <= 120\n"
 		"#define in varying\n"
 		"#endif\n"
-
-		"#include \"IECoreGL/ColorAlgo.h\"\n"
 
 		"uniform vec3 colors[" + std::to_string( g_maxShaderColors ) + "];"
 		"uniform int numColors;"
@@ -140,7 +139,7 @@ static const StringDataPtr fragmentSource()
 		"	{"
 		"		float stripeIndex = floor( (gl_FragCoord.x - gl_FragCoord.y) / stripeWidth );"
 		"		stripeIndex = mod( stripeIndex, float(numColors) );"
-		"		gl_FragColor = ( gl_FragColor * 0.8 + 0.2 ) * vec4( ieLinToSRGB( colors[ int(stripeIndex) ] ), 1.0);"
+		"		gl_FragColor = ( gl_FragColor * 0.8 + 0.2 ) * vec4( colors[ int(stripeIndex) ], 1.0 );"
 		"	}"
 		"}"
 	);
@@ -167,7 +166,7 @@ ShaderNetworkPtr stripeShader( float stripeWidth, size_t numColorsUsed, const st
 } // end anon namespace
 
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( SetVisualiser );
+GAFFER_NODE_DEFINE_TYPE( SetVisualiser );
 
 size_t SetVisualiser::g_firstPlugIndex = 0;
 

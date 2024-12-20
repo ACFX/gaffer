@@ -41,7 +41,9 @@
 #include "IECoreScene/Shader.h"
 #include "IECoreScene/ShaderNetwork.h"
 
-#include "OpenEXR/ImathRandom.h"
+#include "Imath/ImathRandom.h"
+
+#include "fmt/format.h"
 
 using namespace Imath;
 using namespace IECore;
@@ -49,7 +51,7 @@ using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( AttributeVisualiser );
+GAFFER_NODE_DEFINE_TYPE( AttributeVisualiser );
 
 size_t AttributeVisualiser::g_firstPlugIndex = 0;
 
@@ -273,10 +275,34 @@ IECore::ConstCompoundObjectPtr AttributeVisualiser::computeProcessedAttributes( 
 			case Color3fDataTypeId :
 				color = static_cast<const Color3fData *>( attribute )->readable();
 				break;
+			case V2iDataTypeId : {
+				const auto &v = static_cast<const V2iData *>( attribute )->readable();
+				color = Color3f( v.x, v.y, 0 );
+				break;
+			}
+			case V2fDataTypeId : {
+				const auto &v = static_cast<const V2fData *>( attribute )->readable();
+				color = Color3f( v.x, v.y, 0 );
+				break;
+			}
+			case V2dDataTypeId : {
+				const auto &v = static_cast<const V2dData *>( attribute )->readable();
+				color = Color3f( v.x, v.y, 0 );
+				break;
+			}
+			case V3iDataTypeId :
+				color = static_cast<const V3iData *>( attribute )->readable();
+				break;
+			case V3fDataTypeId :
+				color = static_cast<const V3fData *>( attribute )->readable();
+				break;
+			case V3dDataTypeId :
+				color = static_cast<const V3dData *>( attribute )->readable();
+				break;
 			default :
-				throw IECore::Exception( boost::str(
-					boost::format( "Unsupported attribute data type \"%s\"" ) % attribute->typeName()
-				) );
+				throw IECore::Exception(
+					fmt::format( "Unsupported attribute data type \"{}\"", attribute->typeName() )
+				);
 		}
 		const Color3f min( minPlug()->getValue() );
 		const Color3f max( maxPlug()->getValue() );

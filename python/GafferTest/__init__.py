@@ -35,23 +35,12 @@
 #
 ##########################################################################
 
+__import__( "Gaffer" )
+
 from ._GafferTest import *
 
 import os
 import unittest
-
-# workaround lack of expectedFailure decorator for
-# python < 2.7.
-try :
-	expectedFailure = unittest.expectedFailure
-except AttributeError :
-	def expectedFailure( f ) :
-		def wrapper( self ) :
-			try :
-				f( self )
-			except :
-				print( "Expected failure" )
-		return wrapper
 
 ## Determines if the tests are running in a Continuous Integration
 # environment.
@@ -164,6 +153,16 @@ from .NameSwitchTest import NameSwitchTest
 from .SpreadsheetTest import SpreadsheetTest
 from .ShufflePlugTest import ShufflePlugTest
 from .EditScopeTest import EditScopeTest
+from .RandomChoiceTest import RandomChoiceTest
+from .ContextQueryTest import ContextQueryTest
+from .TweakPlugTest import TweakPlugTest
+from .HiddenFilePathFilterTest import HiddenFilePathFilterTest
+from .ContextVariableTweaksTest import ContextVariableTweaksTest
+from .OptionalValuePlugTest import OptionalValuePlugTest
+from .ThreadMonitorTest import ThreadMonitorTest
+from .CollectTest import CollectTest
+from .ProcessTest import ProcessTest
+from .PatternMatchTest import PatternMatchTest
 
 from .IECorePreviewTest import *
 

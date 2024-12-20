@@ -35,7 +35,6 @@
 ##########################################################################
 
 import unittest
-import six
 
 import Gaffer
 import GafferTest
@@ -144,11 +143,34 @@ class EditScopeTest( GafferTest.TestCase ) :
 		self.assertEqual( e.processors(), [ p ] )
 
 		p["in"].setInput( None )
-		with six.assertRaisesRegex( self, RuntimeError, "Output not linked to input" ) :
+		with self.assertRaisesRegex( RuntimeError, "Output not linked to input" ) :
 			e.processors()
 
-		with six.assertRaisesRegex( self, RuntimeError, "Output not linked to input" ) :
+		with self.assertRaisesRegex( RuntimeError, "Output not linked to input" ) :
 			e.acquireProcessor( "Test" )
+
+		# Check internal connections of children
+
+		box = Gaffer.Box()
+		box["BoxIn"] = Gaffer.BoxIn()
+		box["BoxOut"] = Gaffer.BoxOut()
+		box["BoxIn"].setup( e["in"] )
+		box["BoxOut"].setup( e["out"] )
+
+		e["b"] = box
+		e["b"]["in"].setInput( e["BoxIn"]["out"] )
+		e["BoxOut"]["in"].setInput( e["b"]["out"] )
+
+		with self.assertRaisesRegex( RuntimeError, "Node 'b' has no corresponding input" ) :
+			e.processors()
+
+		box["BoxOut"]["in"].setInput( box["BoxIn"]["out"] )
+
+		with self.assertRaisesRegex( RuntimeError, "Node 'b' has no corresponding input" ) :
+			e.processors()
+
+		e["b"]["BoxOut"]["passThrough"].setInput( e["b"]["BoxIn"]["out"] )
+		self.assertEqual( e.processors(), [] )
 
 	def testSerialisation( self ) :
 

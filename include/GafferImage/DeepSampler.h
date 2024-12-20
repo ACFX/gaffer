@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_DEEPSAMPLER_H
-#define GAFFERIMAGE_DEEPSAMPLER_H
+#pragma once
 
 #include "GafferImage/DeepState.h"
 #include "GafferImage/Export.h"
@@ -53,10 +52,10 @@ class GAFFERIMAGE_API DeepSampler : public Gaffer::ComputeNode
 
 	public :
 
-		DeepSampler( const std::string &name=defaultName<DeepSampler>() );
+		explicit DeepSampler( const std::string &name=defaultName<DeepSampler>() );
 		~DeepSampler() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::DeepSampler, DeepSamplerTypeId, ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::DeepSampler, DeepSamplerTypeId, ComputeNode );
 
 		ImagePlug *imagePlug();
 		const ImagePlug *imagePlug() const;
@@ -80,6 +79,6 @@ class GAFFERIMAGE_API DeepSampler : public Gaffer::ComputeNode
 
 };
 
-} // namespace GafferImage
+IE_CORE_DECLAREPTR( DeepSampler )
 
-#endif // GAFFERIMAGE_DEEPSAMPLER_H
+} // namespace GafferImage

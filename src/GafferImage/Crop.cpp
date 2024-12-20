@@ -46,7 +46,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Crop );
+GAFFER_NODE_DEFINE_TYPE( Crop );
 
 size_t Crop::g_firstPlugIndex = 0;
 
@@ -72,6 +72,7 @@ Crop::Crop( const std::string &name )
 	offset->inPlug()->dataWindowPlug()->setInput( cropDataWindowPlug() );
 	offset->enabledPlug()->setInput( enabledPlug() );
 	offset->offsetPlug()->setInput( offsetPlug() );
+	outPlug()->viewNamesPlug()->setInput( offset->outPlug()->viewNamesPlug() );
 	outPlug()->dataWindowPlug()->setInput( offset->outPlug()->dataWindowPlug() );
 	outPlug()->channelDataPlug()->setInput( offset->outPlug()->channelDataPlug() );
 	outPlug()->sampleOffsetsPlug()->setInput( offset->outPlug()->sampleOffsetsPlug() );

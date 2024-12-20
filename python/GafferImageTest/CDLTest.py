@@ -35,6 +35,7 @@
 ##########################################################################
 
 import os
+import pathlib
 import unittest
 import imath
 
@@ -47,7 +48,7 @@ import GafferImageTest
 
 class CDLTest( GafferImageTest.ImageTestCase ) :
 
-	imageFile = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
+	imageFile = GafferImageTest.ImageTestCase.imagesPath() / "checker.exr"
 
 	def test( self ) :
 
@@ -83,7 +84,7 @@ class CDLTest( GafferImageTest.ImageTestCase ) :
 		self.assertNotEqual( offset, saturation )
 		self.assertNotEqual( power, saturation )
 
-		o["direction"].setValue( 2 ) # inverse
+		o["direction"].setValue( GafferImage.OpenColorIOTransform.Direction.Inverse ) # inverse
 		inverse = GafferImage.ImageAlgo.image( o["out"] )
 		self.assertNotEqual( orig, inverse )
 		self.assertNotEqual( slope, inverse )
@@ -99,7 +100,8 @@ class CDLTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.CDL()
 		o["in"].setInput( n["out"] )
 
-		self.assertEqual( GafferImage.ImageAlgo.image( n["out"] ), GafferImage.ImageAlgo.image( o["out"] ) )
+		self.assertImagesEqual( n["out"], o["out"] )
+		self.assertImageHashesEqual( n["out"], o["out"] )
 
 		o['slope'].setValue( imath.Color3f( 1, 2, 3 ) )
 
@@ -107,19 +109,13 @@ class CDLTest( GafferImageTest.ImageTestCase ) :
 
 		o["enabled"].setValue( False )
 
-		self.assertEqual( GafferImage.ImageAlgo.image( n["out"] ), GafferImage.ImageAlgo.image( o["out"] ) )
-		self.assertEqual( n["out"]['format'].hash(), o["out"]['format'].hash() )
-		self.assertEqual( n["out"]['dataWindow'].hash(), o["out"]['dataWindow'].hash() )
-		self.assertEqual( n["out"]["metadata"].getValue(), o["out"]["metadata"].getValue() )
-		self.assertEqual( n["out"]['channelNames'].hash(), o["out"]['channelNames'].hash() )
+		self.assertImagesEqual( n["out"], o["out"] )
+		self.assertImageHashesEqual( n["out"], o["out"] )
 
 		o["enabled"].setValue( True )
 		o['slope'].setValue( o['slope'].defaultValue() )
-		self.assertEqual( GafferImage.ImageAlgo.image( n["out"] ), GafferImage.ImageAlgo.image( o["out"] ) )
-		self.assertEqual( n["out"]['format'].hash(), o["out"]['format'].hash() )
-		self.assertEqual( n["out"]['dataWindow'].hash(), o["out"]['dataWindow'].hash() )
-		self.assertEqual( n["out"]["metadata"].getValue(), o["out"]["metadata"].getValue() )
-		self.assertEqual( n["out"]['channelNames'].hash(), o["out"]['channelNames'].hash() )
+		self.assertImagesEqual( n["out"], o["out"] )
+		self.assertImageHashesEqual( n["out"], o["out"] )
 
 	def testImageHashPassThrough( self ) :
 
@@ -138,7 +134,7 @@ class CDLTest( GafferImageTest.ImageTestCase ) :
 	def testChannelsAreSeparate( self ) :
 
 		i = GafferImage.ImageReader()
-		i["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/circles.exr" ) )
+		i["fileName"].setValue( self.imagesPath() / "circles.exr" )
 
 		o = GafferImage.CDL()
 		o["in"].setInput( i["out"] )

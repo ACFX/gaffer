@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENEUI_TRANSLATETOOL_H
-#define GAFFERSCENEUI_TRANSLATETOOL_H
+#pragma once
 
 #include "GafferSceneUI/TransformTool.h"
 #include "GafferSceneUI/TypeIds.h"
@@ -52,10 +51,10 @@ class GAFFERSCENEUI_API TranslateTool : public TransformTool
 
 	public :
 
-		TranslateTool( SceneView *view, const std::string &name = defaultName<TranslateTool>() );
+		explicit TranslateTool( SceneView *view, const std::string &name = defaultName<TranslateTool>() );
 		~TranslateTool() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::TranslateTool, TranslateToolTypeId, TransformTool );
+		GAFFER_NODE_DECLARE_TYPE( GafferSceneUI::TranslateTool, TranslateToolTypeId, TransformTool );
 
 		Gaffer::IntPlug *orientationPlug();
 		const Gaffer::IntPlug *orientationPlug() const;
@@ -96,7 +95,7 @@ class GAFFERSCENEUI_API TranslateTool : public TransformTool
 
 				// Initialised lazily when we first
 				// acquire the transform plug.
-				boost::optional<Imath::V3f> m_origin;
+				std::optional<Imath::V3f> m_origin;
 
 		};
 
@@ -117,7 +116,7 @@ class GAFFERSCENEUI_API TranslateTool : public TransformTool
 		bool buttonPress( const GafferUI::ButtonEvent &event );
 
 		void setTargetedMode( bool targeted );
-		inline bool getTargetedMode() const { return m_targetedMode; }
+		bool getTargetedMode() const { return m_targetedMode; }
 		bool m_targetedMode;
 
 		std::vector<Translation> m_drag;
@@ -128,5 +127,3 @@ class GAFFERSCENEUI_API TranslateTool : public TransformTool
 };
 
 } // namespace GafferSceneUI
-
-#endif // GAFFERSCENEUI_TRANSLATETOOL_H

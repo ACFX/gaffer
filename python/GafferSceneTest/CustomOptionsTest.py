@@ -137,9 +137,11 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 			dirtiedPlugs,
 			{
 				o["in"]["bound"],
+				o["in"]["childBounds"],
 				o["in"]["object"],
 				o["in"],
 				o["out"]["bound"],
+				o["out"]["childBounds"],
 				o["out"]["object"],
 				o["out"],
 			}
@@ -197,6 +199,28 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 		g = options["out"]["globals"].getValue()
 
 		self.assertEqual( g["option:myCategory:test"], IECore.IntData( 10 ) )
+
+	def testExtraOptions( self ) :
+
+		options = GafferScene.CustomOptions()
+
+		options["options"].addChild( Gaffer.NameValuePlug( "test1", IECore.IntData( 1 ) ) )
+		options["options"].addChild( Gaffer.NameValuePlug( "test2", IECore.IntData( 2 ) ) )
+		options["extraOptions"].setValue(
+			IECore.CompoundObject( {
+				"test1" : IECore.IntData( -1 ),
+				"test3" : IECore.IntData( 3 ),
+			} )
+		)
+
+		self.assertEqual(
+			options["out"].globals(),
+			IECore.CompoundObject( {
+				"option:test1" : IECore.IntData( -1 ),
+				"option:test2" : IECore.IntData( 2 ),
+				"option:test3" : IECore.IntData( 3 )
+			} )
+		)
 
 if __name__ == "__main__":
 	unittest.main()

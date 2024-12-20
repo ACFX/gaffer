@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_DELETEATTRIBUTES_H
-#define GAFFERSCENE_DELETEATTRIBUTES_H
+#pragma once
 
 #include "GafferScene/AttributeProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERSCENE_API DeleteAttributes : public AttributeProcessor
 
 	public :
 
-		DeleteAttributes( const std::string &name=defaultName<DeleteAttributes>() );
+		explicit DeleteAttributes( const std::string &name=defaultName<DeleteAttributes>() );
 		~DeleteAttributes() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::DeleteAttributes, DeleteAttributesTypeId, AttributeProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::DeleteAttributes, DeleteAttributesTypeId, AttributeProcessor );
 
 		Gaffer::StringPlug *namesPlug();
 		const Gaffer::StringPlug *namesPlug() const;
@@ -75,5 +74,3 @@ class GAFFERSCENE_API DeleteAttributes : public AttributeProcessor
 IE_CORE_DECLAREPTR( DeleteAttributes )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_DELETEATTRIBUTES_H

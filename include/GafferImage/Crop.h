@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_CROP_H
-#define GAFFERIMAGE_CROP_H
+#pragma once
 
 #include "GafferImage/ImageProcessor.h"
 
@@ -51,10 +50,10 @@ class GAFFERIMAGE_API Crop : public ImageProcessor
 {
 	public :
 
-		Crop( const std::string &name=defaultName<Crop>() );
+		explicit Crop( const std::string &name=defaultName<Crop>() );
 		~Crop() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Crop, CropTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Crop, CropTypeId, ImageProcessor );
 
 		enum AreaSource
 		{
@@ -113,5 +112,3 @@ class GAFFERIMAGE_API Crop : public ImageProcessor
 IE_CORE_DECLAREPTR( Crop )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_CROP_H

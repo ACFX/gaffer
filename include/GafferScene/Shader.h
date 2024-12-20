@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_SHADER_H
-#define GAFFERSCENE_SHADER_H
+#pragma once
 
 #include "GafferScene/Export.h"
 #include "GafferScene/TypeIds.h"
@@ -48,6 +47,7 @@
 #include "Gaffer/TypedObjectPlug.h"
 
 #include "IECoreScene/Shader.h"
+#include "IECoreScene/ShaderNetwork.h"
 
 #include "IECore/CompoundObject.h"
 #include "IECore/ObjectVector.h"
@@ -69,10 +69,10 @@ class GAFFERSCENE_API Shader : public Gaffer::ComputeNode
 
 	public :
 
-		Shader( const std::string &name=defaultName<Shader>() );
+		explicit Shader( const std::string &name=defaultName<Shader>() );
 		~Shader() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Shader, ShaderTypeId, Gaffer::ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Shader, ShaderTypeId, Gaffer::ComputeNode );
 
 		/// A plug defining the name of the shader.
 		Gaffer::StringPlug *namePlug();
@@ -132,8 +132,8 @@ class GAFFERSCENE_API Shader : public Gaffer::ComputeNode
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 		/// Attributes computation
 		/// ----------------------
@@ -163,8 +163,8 @@ class GAFFERSCENE_API Shader : public Gaffer::ComputeNode
 
 		class NetworkBuilder;
 
-		void nameChanged();
-		void nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Node *node );
+		void nameChanged( IECore::InternedString oldName ) override;
+		void nodeMetadataChanged( IECore::InternedString key );
 
 		// We want to use the node name when computing the shader, so that we
 		// can generate more useful shader handles. It's illegal to use anything
@@ -183,17 +183,20 @@ class GAFFERSCENE_API Shader : public Gaffer::ComputeNode
 		Gaffer::CompoundObjectPlug *outAttributesPlug();
 		const Gaffer::CompoundObjectPlug *outAttributesPlug() const;
 
+		const Gaffer::ValuePlug *parameterSource(
+			const Gaffer::Plug *output,
+			const IECoreScene::ShaderNetwork::Parameter &parameter
+		) const;
+
 		static const IECore::InternedString g_outputParameterContextName;
 
 		static size_t g_firstPlugIndex;
 
 		friend class ShaderPlug;
-		friend class TweakPlug;
+		friend class ShaderTweaks;
 
 };
 
 IE_CORE_DECLAREPTR( Shader )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_SHADER_H

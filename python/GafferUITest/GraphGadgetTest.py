@@ -38,6 +38,8 @@
 import unittest
 import threading
 import imath
+import inspect
+import time
 
 import IECore
 
@@ -569,7 +571,7 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 			previousRoots.append( previousRoot )
 
 		g = GafferUI.GraphGadget( s )
-		c = g.rootChangedSignal().connect( f )
+		g.rootChangedSignal().connect( f )
 
 		self.assertEqual( len( roots ), 0 )
 		self.assertEqual( len( previousRoots ), 0 )
@@ -1405,6 +1407,48 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 
 		Gaffer.Metadata.registerValue( s["b"]["n"], "nodeGadget:type", "GafferUI::AuxiliaryNodeGadget" )
 		self.assertIsNone( g.nodeGadget( s["b"]["n"] ) )
+
+	def assertHighlighting( self, graphGadget, expectedState ) :
+
+		# Highlighting is performed as a background task, so we have
+		# to wait for it to finish.
+		contextTracker = GafferUI.ContextTracker.acquireForFocus( graphGadget.getRoot().scriptNode() )
+		if contextTracker.updatePending() :
+			with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as uiCallHandler :
+				self.waitForIdle()
+				uiCallHandler.assertCalled()
+
+		actualState = {
+			k : not graphGadget.nodeGadget( graphGadget.getRoot()[k] ).getContents().getDimmed()
+			for k in expectedState.keys()
+		}
+		self.assertEqual( actualState, expectedState )
+
+	def testDirtyTrackingForInitialFocusNode( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["add1"] = GafferTest.AddNode()
+		script["add2"] = GafferTest.AddNode()
+
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( script["add1"]["op1"] )
+		script["switch"]["in"][0].setInput( script["add1"]["sum"] )
+		script["switch"]["in"][1].setInput( script["add2"]["sum"] )
+
+		script.setFocus( script["switch"] )
+
+		graphGadget = GafferUI.GraphGadget( script )
+
+		# Initially we expect the left branch of the switch to be highlighted.
+
+		self.assertHighlighting( graphGadget, { "switch" : True, "add1" : True, "add2" : False } )
+
+		# If we switch to the right branch, we expect the highlighting to
+		# follow suit.
+
+		script["switch"]["index"].setValue( 1 )
+		self.assertHighlighting( graphGadget, { "switch" : True, "add1" : False, "add2" : True } )
 
 if __name__ == "__main__":
 	unittest.main()

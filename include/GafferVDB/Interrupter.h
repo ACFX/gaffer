@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERVDB_INTERRUPTER_H
-#define GAFFERVDB_INTERRUPTER_H
+#pragma once
 
 #include "IECore/Canceller.h"
 
@@ -47,8 +46,7 @@ class Interrupter {
 	public:
 
 		Interrupter(const IECore::Canceller *canceller)
-		: m_canceller(canceller),
-		  m_interrupted(false)
+			:	m_canceller( canceller )
 		{
 		}
 
@@ -62,31 +60,13 @@ class Interrupter {
 
 		bool wasInterrupted( int percent = -1 )
 		{
-			if ( m_interrupted )
-			{
-				return true;
-			}
-
-			// todo this a a problem installing a exception handler
-			// per a call to this function.
-			try
-			{
-				IECore::Canceller::check( m_canceller );
-			}
-			catch( const IECore::Cancelled& )
-			{
-				m_interrupted = true;
-			}
-
-			return m_interrupted;
+			return m_canceller && m_canceller->cancelled();
 		}
+
 	private:
+
 		const IECore::Canceller* m_canceller;
-		bool m_interrupted;
 
 };
 
 } // namespace GafferVDB
-
-#endif // GAFFERVDB_INTERRUPTER_H
-

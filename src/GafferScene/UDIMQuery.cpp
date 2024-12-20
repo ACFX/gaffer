@@ -46,13 +46,14 @@
 #include "boost/algorithm/string/replace.hpp"
 #include "boost/container/flat_set.hpp"
 
+#include "fmt/format.h"
 
 using namespace IECore;
 using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( UDIMQuery );
+GAFFER_NODE_DEFINE_TYPE( UDIMQuery );
 
 size_t UDIMQuery::g_firstPlugIndex = 0;
 
@@ -232,10 +233,9 @@ struct InfoDataAccumulator
 		if( uvs->size() != targetSize )
 		{
 			throw IECore::Exception(
-				boost::str(
-					boost::format(
-						"Cannot query UDIMs.  Bad uvs at location %s.  Required count %i but found %i."
-					) % pathString % targetSize % uvs->size()
+				fmt::format(
+					"Cannot query UDIMs. Bad uvs at location \"{}\". Required count {} but found {}.",
+					pathString, targetSize, uvs->size()
 				)
 			);
 		}
@@ -329,3 +329,22 @@ void UDIMQuery::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 		ComputeNode::compute( output, context );
 	}
 }
+
+Gaffer::ValuePlug::CachePolicy UDIMQuery::computeCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == outPlug() )
+	{
+		return ValuePlug::CachePolicy::TaskCollaboration;
+	}
+	return ComputeNode::computeCachePolicy( output );
+}
+
+Gaffer::ValuePlug::CachePolicy UDIMQuery::hashCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == outPlug() )
+	{
+		return ValuePlug::CachePolicy::TaskCollaboration;
+	}
+	return ComputeNode::hashCachePolicy( output );
+}
+

@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFER_SPREADSHEET_H
-#define GAFFER_SPREADSHEET_H
+#pragma once
 
 #include "Gaffer/ComputeNode.h"
 #include "Gaffer/NumericPlug.h"
@@ -51,10 +50,10 @@ class GAFFER_API Spreadsheet : public ComputeNode
 
 	public :
 
-		Spreadsheet( const std::string &name=defaultName<Spreadsheet>() );
+		explicit Spreadsheet( const std::string &name=defaultName<Spreadsheet>() );
 		~Spreadsheet() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::Spreadsheet, SpreadsheetTypeId, ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::Spreadsheet, SpreadsheetTypeId, ComputeNode );
 
 		/// Plug types
 		/// ==========
@@ -70,13 +69,13 @@ class GAFFER_API Spreadsheet : public ComputeNode
 		///
 		/// > Note : It is strongly recommended that the child RowPlugs are
 		/// > accessed via their numeric indices and never via their names.
-		class RowsPlug : public ValuePlug
+		class GAFFER_API RowsPlug : public ValuePlug
 		{
 
 			public :
 
 				RowsPlug( const std::string &name = defaultName<RowsPlug>(), Direction direction = In, unsigned flags = Default );
-				virtual ~RowsPlug();
+				~RowsPlug() override;
 
 				GAFFER_PLUG_DECLARE_TYPE( Gaffer::Spreadsheet::RowsPlug, Gaffer::SpreadsheetRowsPlugTypeId, Gaffer::ValuePlug );
 
@@ -143,7 +142,7 @@ class GAFFER_API Spreadsheet : public ComputeNode
 
 		/// Defines a single row of the spreadsheet. Access using
 		/// `RowPlug::Range( *rowsPlug() )` or via `rowsPlug()->getChild<RowPlug>()`.
-		class RowPlug : public ValuePlug
+		class GAFFER_API RowPlug : public ValuePlug
 		{
 
 			public :
@@ -171,7 +170,7 @@ class GAFFER_API Spreadsheet : public ComputeNode
 		/// Defines a single cell in the spreadsheet. Access using
 		/// `CellPlug::Range( *rowPlug->cellsPlug() )` or via
 		/// `rowPlug->cellsPlug()->getChild<CellPlug>()`.
-		class CellPlug : public ValuePlug
+		class GAFFER_API CellPlug : public ValuePlug
 		{
 
 			public :
@@ -214,8 +213,14 @@ class GAFFER_API Spreadsheet : public ComputeNode
 		ValuePlug *outPlug();
 		const ValuePlug *outPlug() const;
 
-		StringVectorDataPlug *activeRowNamesPlug();
-		const StringVectorDataPlug *activeRowNamesPlug() const;
+		StringVectorDataPlug *enabledRowNamesPlug();
+		const StringVectorDataPlug *enabledRowNamesPlug() const;
+
+		CompoundObjectPlug *resolvedRowsPlug();
+		const CompoundObjectPlug *resolvedRowsPlug() const;
+
+		IntPlug *activeRowIndexPlug();
+		const IntPlug *activeRowIndexPlug() const;
 
 		/// Returns the input plug which provides the value
 		/// for `output` in the current context.
@@ -241,9 +246,6 @@ class GAFFER_API Spreadsheet : public ComputeNode
 		ObjectPlug *rowsMapPlug();
 		const ObjectPlug *rowsMapPlug() const;
 
-		IntPlug *rowIndexPlug();
-		const IntPlug *rowIndexPlug() const;
-
 		const ValuePlug *correspondingInput( const Plug *output, size_t rowIndex ) const;
 
 		static size_t g_firstPlugIndex;
@@ -255,5 +257,3 @@ IE_CORE_DECLAREPTR( Spreadsheet )
 } // namespace Gaffer
 
 #include "Gaffer/Spreadsheet.inl"
-
-#endif // GAFFER_SPREADSHEET_H

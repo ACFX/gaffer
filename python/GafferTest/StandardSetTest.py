@@ -163,8 +163,8 @@ class StandardSetTest( GafferTest.TestCase ) :
 
 		s = Gaffer.StandardSet()
 
-		c1 = s.memberAddedSignal().connect( added )
-		c2 = s.memberRemovedSignal().connect( removed )
+		s.memberAddedSignal().connect( added )
+		s.memberRemovedSignal().connect( removed )
 
 		n1 = Gaffer.Node()
 		n2 = Gaffer.Node()
@@ -220,7 +220,7 @@ class StandardSetTest( GafferTest.TestCase ) :
 
 			return m.isInstanceOf( Gaffer.Plug.staticTypeId() )
 
-		c = s.memberAcceptanceSignal().connect(	f )
+		s.memberAcceptanceSignal().connect(	f )
 
 		n = Gaffer.Node()
 		p = Gaffer.Plug()
@@ -268,7 +268,7 @@ class StandardSetTest( GafferTest.TestCase ) :
 
 			pass
 
-		c = s.memberRemovedSignal().connect( f )
+		s.memberRemovedSignal().connect( f )
 
 		s.clear()
 
@@ -424,6 +424,53 @@ class StandardSetTest( GafferTest.TestCase ) :
 		self.assertTrue( c2 in s1 )
 		self.assertTrue( c1 in s2 )
 		self.assertTrue( c2 in s2 )
+
+	def testOrphanRemovalConnections( self ) :
+
+		p = Gaffer.GraphComponent()
+		c = Gaffer.GraphComponent()
+		p["c"] = c
+
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
+
+		s = Gaffer.StandardSet( p.children() )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
+
+		s.setRemoveOrphans( False )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
+
+		s.setRemoveOrphans( True )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 1 )
+
+		s.setRemoveOrphans( True )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 1 )
+
+		s.setRemoveOrphans( False )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
+
+		s.setRemoveOrphans( True )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 1 )
+
+		s.remove( c )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
+
+		s.add( c )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 1 )
+
+		p.removeChild( c )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
+
+		s.add( c )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 1 )
+
+		s.clear()
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
+
+		s.add( c )
+		self.assertEqual( c.parentChangedSignal().numSlots(), 1 )
+
+		del s
+		self.assertEqual( c.parentChangedSignal().numSlots(), 0 )
 
 if __name__ == "__main__":
 	unittest.main()

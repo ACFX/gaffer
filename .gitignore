@@ -1,10 +1,20 @@
 *.*~
 *.dylib
 *.os
+*.moc
 *.pyc
 *.swp
 *.so
 *.tmp
+*.desktop
+*.code-workspace
+*.obj
+*.pyd
+*.pdb
+*.dll
+*.lib
+*.ilk
+*.exp
 .gafferBackups
 .idea
 .sconf_temp
@@ -14,3 +24,9 @@ cmake-build-*
 config.log
 doc/html
 doc/python
+include/Gaffer/Version.h
+contrib/openColorIOPandemonium/luts/*.spi1d
+contrib/openColorIOPandemonium/luts/*.cube
+
+# clang compile commands
+compile_commands.json

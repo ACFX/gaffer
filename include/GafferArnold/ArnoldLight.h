@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERARNOLD_ARNOLDLIGHT_H
-#define GAFFERARNOLD_ARNOLDLIGHT_H
+#pragma once
 
 #include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
@@ -53,9 +52,9 @@ class GAFFERARNOLD_API ArnoldLight : public GafferScene::Light
 
 	public :
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldLight, ArnoldLightTypeId, GafferScene::Light );
+		GAFFER_NODE_DECLARE_TYPE( GafferArnold::ArnoldLight, ArnoldLightTypeId, GafferScene::Light );
 
-		ArnoldLight( const std::string &name=defaultName<ArnoldLight>() );
+		explicit ArnoldLight( const std::string &name=defaultName<ArnoldLight>() );
 		~ArnoldLight() override;
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
@@ -82,5 +81,3 @@ class GAFFERARNOLD_API ArnoldLight : public GafferScene::Light
 IE_CORE_DECLAREPTR( ArnoldLight )
 
 } // namespace GafferArnold
-
-#endif // GAFFERARNOLD_ARNOLDLIGHT_H

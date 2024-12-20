@@ -34,13 +34,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERUI_ROTATEHANDLE_H
-#define GAFFERUI_ROTATEHANDLE_H
+#pragma once
 
 #include "GafferUI/Handle.h"
 
 IECORE_PUSH_DEFAULT_VISIBILITY
-#include "OpenEXR/ImathEuler.h"
+#include "Imath/ImathEuler.h"
 IECORE_POP_DEFAULT_VISIBILITY
 
 namespace GafferUI
@@ -51,7 +50,7 @@ class GAFFERUI_API RotateHandle : public Handle
 
 	public :
 
-		RotateHandle( Style::Axes axes );
+		explicit RotateHandle( Style::Axes axes );
 		~RotateHandle() override;
 
 		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::RotateHandle, RotateHandleTypeId, Handle );
@@ -97,9 +96,4 @@ class GAFFERUI_API RotateHandle : public Handle
 
 IE_CORE_DECLAREPTR( RotateHandle )
 
-typedef Gaffer::FilteredChildIterator<Gaffer::TypePredicate<RotateHandle> > RotateHandleIterator;
-typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::TypePredicate<RotateHandle> > RecursiveRotateHandleIterator;
-
 } // namespace GafferUI
-
-#endif // GAFFERUI_ROTATEHANDLE_H

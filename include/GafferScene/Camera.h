@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_CAMERA_H
-#define GAFFERSCENE_CAMERA_H
+#pragma once
 
 #include "Gaffer/CompoundDataPlug.h"
 #include "GafferScene/ObjectSource.h"
@@ -49,9 +48,9 @@ class GAFFERSCENE_API Camera : public ObjectSource
 
 	public :
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Camera, CameraTypeId, ObjectSource );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Camera, CameraTypeId, ObjectSource );
 
-		Camera( const std::string &name=defaultName<Camera>() );
+		explicit Camera( const std::string &name=defaultName<Camera>() );
 		~Camera() override;
 
 		Gaffer::StringPlug *projectionPlug();
@@ -123,5 +122,3 @@ class GAFFERSCENE_API Camera : public ObjectSource
 IE_CORE_DECLAREPTR( Camera )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_CAMERA_H

@@ -1,4 +1,3 @@
-#!/usr/bin/env python2.6
 ##########################################################################
 #
 #  Copyright (c) 2011, John Haddon. All rights reserved.
@@ -52,10 +51,22 @@ signal.signal( signal.SIGINT, signal.SIG_DFL )
 # to catch all the naughty deprecated things we do.
 warnings.simplefilter( "default", DeprecationWarning )
 
-import IECore
-from Gaffer._Gaffer import _nameProcess
+import Gaffer
+Gaffer._Gaffer._nameProcess()
 
-_nameProcess()
+import IECore
+
+if os.name == "nt" :
+	Gaffer._Gaffer._verifyAllocator()
+
+# Increase the soft limit for file handles as high as we can - we need everything we can get for
+# opening models, textures etc.
+if os.name != "nt" :
+	import resource
+	softFileLimit, hardFileLimit = resource.getrlimit( resource.RLIMIT_NOFILE )
+	if softFileLimit < hardFileLimit :
+		resource.setrlimit( resource.RLIMIT_NOFILE, ( hardFileLimit, hardFileLimit ) )
+		IECore.msg( IECore.Msg.Level.Debug, "Gaffer", "Increased file handle limit to {}".format( hardFileLimit ) )
 
 helpText = """Usage :
 
@@ -80,14 +91,10 @@ def loadApp( appName ) :
 
 def checkCleanExit() :
 
-	# Get the Gaffer and GafferUI modules, but only if the app actually
-	# imported them. We don't want to force their importation because it's
-	# just a waste of time if they weren't used.
-	Gaffer = sys.modules.get( "Gaffer" )
+	# Get the GafferUI module, but only if the app actually imported it. We
+	# don't want to force its importation because it's just a waste of time
+	# if it wasn't used.
 	GafferUI = sys.modules.get( "GafferUI" )
-
-	if Gaffer is None and GafferUI is None :
-		return
 
 	# Clean up any garbage left behind by Cortex's wrapper mechanism - because
 	# the Gaffer.Application itself is derived from IECore.Parameterised, which
@@ -112,7 +119,7 @@ def checkCleanExit() :
 	scriptNodes = []
 	widgets = []
 	for o in gc.get_objects() :
-		if Gaffer is not None and isinstance( o, Gaffer.ScriptNode ) :
+		if isinstance( o, Gaffer.ScriptNode ) :
 			scriptNodes.append( o )
 		elif GafferUI is not None and isinstance( o, GafferUI.Widget ) :
 			widgets.append( o )

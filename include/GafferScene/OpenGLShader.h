@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_OPENGLSHADER_H
-#define GAFFERSCENE_OPENGLSHADER_H
+#pragma once
 
 #include "GafferScene/Shader.h"
 
@@ -47,10 +46,10 @@ class GAFFERSCENE_API OpenGLShader : public GafferScene::Shader
 
 	public :
 
-		OpenGLShader( const std::string &name=defaultName<OpenGLShader>() );
+		explicit OpenGLShader( const std::string &name=defaultName<OpenGLShader>() );
 		~OpenGLShader() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::OpenGLShader, OpenGLShaderTypeId, GafferScene::Shader );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::OpenGLShader, OpenGLShaderTypeId, GafferScene::Shader );
 
 		void loadShader( const std::string &shaderName, bool keepExistingValues=false ) override;
 
@@ -70,5 +69,3 @@ class GAFFERSCENE_API OpenGLShader : public GafferScene::Shader
 IE_CORE_DECLAREPTR( OpenGLShader )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_OPENGLSHADER_H

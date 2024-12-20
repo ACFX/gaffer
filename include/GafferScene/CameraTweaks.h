@@ -34,13 +34,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_CAMERATWEAKS_H
-#define GAFFERSCENE_CAMERATWEAKS_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
-#include "GafferScene/TweakPlug.h"
 
 #include "Gaffer/StringPlug.h"
+#include "Gaffer/TweakPlug.h"
 
 namespace GafferScene
 {
@@ -50,13 +49,16 @@ class GAFFERSCENE_API CameraTweaks : public ObjectProcessor
 
 	public :
 
-		CameraTweaks( const std::string &name=defaultName<CameraTweaks>() );
+		explicit CameraTweaks( const std::string &name=defaultName<CameraTweaks>() );
 		~CameraTweaks() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CameraTweaks, CameraTweaksTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::CameraTweaks, CameraTweaksTypeId, ObjectProcessor );
 
-		GafferScene::TweaksPlug *tweaksPlug();
-		const GafferScene::TweaksPlug *tweaksPlug() const;
+		Gaffer::BoolPlug *ignoreMissingPlug();
+		const Gaffer::BoolPlug *ignoreMissingPlug() const;
+
+		Gaffer::TweaksPlug *tweaksPlug();
+		const Gaffer::TweaksPlug *tweaksPlug() const;
 
 	protected :
 
@@ -71,5 +73,3 @@ class GAFFERSCENE_API CameraTweaks : public ObjectProcessor
 IE_CORE_DECLAREPTR( CameraTweaks )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_CAMERATWEAKS_H

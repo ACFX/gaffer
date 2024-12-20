@@ -41,8 +41,11 @@ from Qt import QtCore
 import Gaffer
 import GafferImage
 import GafferScene
+import GafferSceneUI
 import GafferUI
 import GafferImageUI
+
+from GafferUI.PlugValueWidget import sole
 
 import IECore
 
@@ -55,12 +58,15 @@ for key, value in {
 	"toolbarLayout:customWidget:RenderControlBalancingSpacer:widgetType" : "GafferSceneUI.InteractiveRenderUI._ViewRenderControlBalancingSpacer",
 	"toolbarLayout:customWidget:RenderControlBalancingSpacer:section" :  "Top",
 	"toolbarLayout:customWidget:RenderControlBalancingSpacer:visibilityActivator" : "viewSupportsRenderControl" ,
-	"toolbarLayout:customWidget:RenderControlBalancingSpacer:index" :  0,
+	"toolbarLayout:customWidget:RenderControlBalancingSpacer:index" :  1,
 
 	"toolbarLayout:customWidget:RenderControl:widgetType" : "GafferSceneUI.InteractiveRenderUI._ViewRenderControlUI",
 	"toolbarLayout:customWidget:RenderControl:section" :  "Top",
 	"toolbarLayout:customWidget:RenderControl:visibilityActivator" : "viewSupportsRenderControl" ,
-	"toolbarLayout:customWidget:RenderControl:index" :  -2,
+	"toolbarLayout:customWidget:RenderControl:index" :  -1,
+
+	"toolbarLayout:customWidget:RightCenterSpacer:index" :  -3,
+	"toolbarLayout:customWidget:StateWidgetBalancingSpacer:index" :  -2,
 
 	"toolbarLayout:activator:viewSupportsRenderControl" : lambda view : _ViewRenderControlUI._interactiveRenderNode( view ) is not None,
 
@@ -69,13 +75,14 @@ for key, value in {
 
 class _ViewRenderControlBalancingSpacer( GafferUI.Spacer ) :
 
-	def __init__( self, sceneView, **kw ) :
+	def __init__( self, imageView, **kw ) :
 
+		width = 104
 		GafferUI.Spacer.__init__(
 			self,
 			imath.V2i( 0 ), # Minimum
-			maximumSize = imath.V2i( 100, 1 ),
-			preferredSize = imath.V2i( 100, 1 )
+			preferredSize = imath.V2i( width, 1 ),
+			maximumSize = imath.V2i( width, 1 )
 		)
 
 class _ViewRenderControlUI( GafferUI.Widget ) :
@@ -95,7 +102,7 @@ class _ViewRenderControlUI( GafferUI.Widget ) :
 		self.__view = view
 
 		if isinstance( self.__view["in"], GafferImage.ImagePlug ) :
-			view.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__viewPlugDirtied ), scoped = False )
+			view.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__viewPlugDirtied ) )
 
 		self.__update()
 
@@ -109,10 +116,10 @@ class _ViewRenderControlUI( GafferUI.Widget ) :
 			if not statePlug.isSame( self.__stateWidget.getPlug() ) :
 				self.__stateWidget.setPlug( statePlug )
 				self.__messagesWidget.setPlug( renderNode["messages"] )
-				self.__renderNodePlugDirtiedConnection = renderNode.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__renderNodePlugDirtied ) )
+				self.__renderNodePlugDirtiedConnection = renderNode.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__renderNodePlugDirtied ), scoped = True )
 
 			# We disable the controls if a render is in progress, but not being viewed
-			with self.__view.getContext() :
+			with self.__view.context() :
 				renderNodeStopped = statePlug.getValue() == GafferScene.InteractiveRender.State.Stopped
 				viewedImageIsRendering = self.__imageIsRendering( self.__view["in"] )
 				controlsEnabled  = ( viewedImageIsRendering and not renderNodeStopped ) or renderNodeStopped
@@ -134,7 +141,7 @@ class _ViewRenderControlUI( GafferUI.Widget ) :
 		if not isinstance( view["in"], GafferImage.ImagePlug ) :
 			return None
 
-		with view.getContext() :
+		with view.context() :
 			try :
 				renderScene = GafferScene.SceneAlgo.sourceScene( view["in"] )
 			except :
@@ -148,13 +155,14 @@ class _ViewRenderControlUI( GafferUI.Widget ) :
 
 	def __imageIsRendering( self, imagePlug ) :
 
-		# Make-shift detection of an in-progress render.
-		# Finished images have the `fileFormat` key courtesy of OIIO.
-		## \TODO add more formal metadata to determine this
+		rendering = False
+
 		try :
-			return "fileFormat" not in imagePlug.metadata()
+			rendering = imagePlug.metadata()[ "gaffer:isRendering" ].value
 		except :
-			return False
+			pass
+
+		return rendering
 
 	@GafferUI.LazyMethod()
 	def __updateLazily( self ) :
@@ -195,34 +203,32 @@ class _StatePlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.__startPauseButton._qtWidget().setFocusPolicy( QtCore.Qt.NoFocus )
 		self.__stopButton._qtWidget().setFocusPolicy( QtCore.Qt.NoFocus )
 
-		self.__startPauseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__startPauseClicked ), scoped = False )
-		self.__stopButton.clickedSignal().connect( Gaffer.WeakMethod( self.__stopClicked ), scoped = False )
+		self.__startPauseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__startPauseClicked ) )
+		self.__stopButton.clickedSignal().connect( Gaffer.WeakMethod( self.__stopClicked ) )
 
 		self.__stateIcons = {
 			GafferScene.InteractiveRender.State.Running : 'renderPause.png',
 			GafferScene.InteractiveRender.State.Paused : 'renderResume.png',
-			GafferScene.InteractiveRender.State.Stopped : 'renderStart.png'
+			GafferScene.InteractiveRender.State.Stopped : 'renderStart.png',
+			None : 'renderStart.png',
 		}
 
-		self._updateFromPlug()
+		self.__state = None
 
-	def _updateFromPlug( self ) :
+	def _updateFromValues( self, values, exception ) :
 
-		if self.getPlug() is None or not self._editable() :
-			self.__startPauseButton.setEnabled( False )
-			self.__stopButton.setEnabled( False )
-			return
+		self.__state = sole( values )
+		self.__startPauseButton.setImage( self.__stateIcons[self.__state] )
+		self._updateFromEditable()
 
-		with self.getContext() :
-			state = self.getPlug().getValue()
+	def _updateFromEditable( self ) :
 
-		self.__startPauseButton.setEnabled( True )
-		self.__startPauseButton.setImage( self.__stateIcons[state] )
-		self.__stopButton.setEnabled( state != GafferScene.InteractiveRender.State.Stopped )
+		self.__startPauseButton.setEnabled( self._editable() )
+		self.__stopButton.setEnabled( self._editable() and self.__state != GafferScene.InteractiveRender.State.Stopped )
 
 	def __startPauseClicked( self, button ) :
 
-		with self.getContext() :
+		with self.context() :
 			state = self.getPlug().getValue()
 
 		# When setting the plug value here, we deliberately don't use an UndoScope.
@@ -251,26 +257,23 @@ class _MessageSummaryPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		GafferUI.PlugValueWidget.__init__( self, self.__summaryWidget, plug )
 
-		self.__summaryWidget.levelButtonClickedSignal().connect( Gaffer.WeakMethod( self.__levelButtonClicked ), scoped = False )
-
-		self._updateFromPlug()
+		self.__summaryWidget.levelButtonClickedSignal().connect( Gaffer.WeakMethod( self.__levelButtonClicked ) )
 
 	def getToolTip( self ) :
 
 		# Suppress the default messages tool-tip.
 		return ""
 
-	@GafferUI.LazyMethod( deferUntilPlaybackStops = True )
-	def _updateFromPlug( self ) :
+	def _updateFromValues( self, values, exception ) :
 
-		if self.getPlug() is not None :
-			with self.getContext() :
-				messages = self.getPlug().getValue().value
-		else :
-			messages = Gaffer.Private.IECorePreview.Messages()
+		if len( values ) :
+			self.__summaryWidget.setMessages( values[0].value )
 
-		self.__summaryWidget.setMessages( messages )
-		self.__summaryWidget.setEnabled( self.getPlug() is not None )
+	def _updateFromEditable( self ) :
+
+		# We don't care about read-onliness, because the summary widget only
+		# displays values, and doesn't allow any editing.
+		self.__summaryWidget.setEnabled( bool( self.getPlugs() ) )
 
 	def __levelButtonClicked( self, level ) :
 
@@ -299,8 +302,8 @@ class _MessagesWindow( GafferUI.Window ) :
 		node = plug.node()
 		scriptNode = node.scriptNode()
 		while node and not node.isSame( scriptNode ) :
-			node.nameChangedSignal().connect( Gaffer.WeakMethod( self.__updateTitle ), scoped = False )
-			node.parentChangedSignal().connect( Gaffer.WeakMethod( self.__destroy ), scoped = False )
+			node.nameChangedSignal().connect( Gaffer.WeakMethod( self.__updateTitle ) )
+			node.parentChangedSignal().connect( Gaffer.WeakMethod( self.__destroy ) )
 			node = node.parent()
 
 		self.__updateTitle()
@@ -350,8 +353,6 @@ class _MessagesPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		GafferUI.PlugValueWidget.__init__( self, self.__messages, plug, **kwargs )
 
-		self._updateFromPlug()
-
 	def hasLabel( self ) :
 
 		return True
@@ -365,20 +366,21 @@ class _MessagesPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		return self.__messages
 
-	@GafferUI.LazyMethod( deferUntilPlaybackStops = True )
-	def _updateFromPlug( self, *unused ) :
+	def _updateFromValues( self, values, exception ) :
 
-		if self.getPlug() is not None :
-			with self.getContext() :
-				messages = self.getPlug().getValue().value
-		else :
-			messages = Gaffer.Private.IECorePreview.Messages()
-
-		self.__messages.setMessages( messages )
+		if len( values ) :
+			self.__messages.setMessages( values[0].value )
 
 ##########################################################################
 # Metadata for InteractiveRender node.
 ##########################################################################
+
+def __rendererPresetNames( plug ) :
+
+	return IECore.StringVectorData( [
+		x for x in GafferSceneUI.RenderUI.rendererPresetNames( plug )
+		if x != "OpenGL"
+	] )
 
 Gaffer.Metadata.registerNode(
 
@@ -415,8 +417,19 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			"""
-			The renderer to use.
+			The renderer to use. Default mode uses the `render:defaultRenderer` option from
+			the input scene globals to choose the renderer. This can be authored using
+			the StandardOptions node.
+
+			> Note : Changing renderer currently requires that the current render is
+			> manually stopped and restarted.
 			""",
+
+			"plugValueWidget:type", "GafferSceneUI.RenderUI.RendererPlugValueWidget",
+
+			"preset:Default", "",
+			"presetNames", __rendererPresetNames,
+			"presetValues", __rendererPresetNames,
 
 		],
 
@@ -429,6 +442,18 @@ Gaffer.Metadata.registerNode(
 
 			"label", "Render",
 			"plugValueWidget:type", "GafferSceneUI.InteractiveRenderUI._StatePlugValueWidget",
+
+		],
+
+		"resolvedRenderer" : [
+
+			"description",
+			"""
+			The renderer that will be used, accounting for the value of the
+			`render:defaultRenderer` option if `renderer` is set to "Default".
+			""",
+
+			"layout:section", "Advanced",
 
 		],
 
@@ -456,4 +481,3 @@ Gaffer.Metadata.registerNode(
 
 	}
 )
-

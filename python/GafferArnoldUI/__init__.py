@@ -39,13 +39,11 @@ __import__( "GafferSceneUI" )
 from ._GafferArnoldUI import *
 
 from . import ArnoldShaderUI
-from . import ArnoldRenderUI
 from . import ShaderMenu
 from . import ArnoldOptionsUI
 from . import ArnoldAttributesUI
 from . import ArnoldLightUI
 from . import ArnoldVDBUI
-from . import InteractiveArnoldRenderUI
 from . import ArnoldDisplacementUI
 from . import ArnoldMeshLightUI
 from . import ArnoldShaderBallUI
@@ -56,6 +54,8 @@ from . import ArnoldTextureBakeUI
 from . import ArnoldCameraShadersUI
 from . import ArnoldLightFilterUI
 from . import ArnoldColorManagerUI
+from . import ArnoldImagerUI
 from . import CacheMenu
+from . import GPUCache
 
 __import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferArnoldUI" )

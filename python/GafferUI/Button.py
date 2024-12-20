@@ -35,7 +35,7 @@
 #
 ##########################################################################
 
-import six
+import IECore
 
 import Gaffer
 import GafferUI
@@ -55,6 +55,7 @@ class Button( GafferUI.Widget ) :
 		self.__highlightForHover = False
 
 		self._qtWidget().setAttribute( QtCore.Qt.WA_LayoutUsesWidgetRect )
+		self._qtWidget().setFocusPolicy( QtCore.Qt.TabFocus )
 		# allow return and enter keys to click button
 		self._qtWidget().setAutoDefault( True )
 
@@ -78,8 +79,8 @@ class Button( GafferUI.Widget ) :
 		self._qtWidget().setPalette( Button.__palette )
 
 		if highlightOnOver :
-			self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ), scoped = False )
-			self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ), scoped = False )
+			self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ) )
+			self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ) )
 
 	def setHighlighted( self, highlighted ) :
 
@@ -89,7 +90,7 @@ class Button( GafferUI.Widget ) :
 
 	def setText( self, text ) :
 
-		assert( isinstance( text, six.string_types ) )
+		assert( isinstance( text, str ) )
 
 		self._qtWidget().setText( text )
 
@@ -99,10 +100,21 @@ class Button( GafferUI.Widget ) :
 
 	def setImage( self, imageOrImageFileName ) :
 
-		assert( isinstance( imageOrImageFileName, ( six.string_types, GafferUI.Image, type( None ) ) ) )
+		assert( isinstance( imageOrImageFileName, ( str, GafferUI.Image, type( None ) ) ) )
 
-		if isinstance( imageOrImageFileName, six.string_types ) :
-			self.__image = GafferUI.Image( imageOrImageFileName )
+		if isinstance( imageOrImageFileName, str ) :
+			# Avoid our image getting parented to the wrong thing
+			# if our caller is in a `with container` block.
+			GafferUI.Widget._pushParent( None )
+
+			# Make sure we don't break if an image is missing
+			try:
+				self.__image = GafferUI.Image( imageOrImageFileName )
+			except Exception as e:
+				IECore.msg( IECore.Msg.Level.Error, "GafferUI.Button",
+					"Could not read image for icon : " + str( e )
+				)
+			GafferUI.Widget._popParent()
 		else :
 			self.__image = imageOrImageFileName
 

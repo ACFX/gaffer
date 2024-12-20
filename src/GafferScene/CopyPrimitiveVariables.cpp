@@ -42,13 +42,15 @@
 
 #include "IECoreScene/Primitive.h"
 
+#include "fmt/format.h"
+
 using namespace std;
 using namespace IECore;
 using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CopyPrimitiveVariables );
+GAFFER_NODE_DEFINE_TYPE( CopyPrimitiveVariables );
 
 size_t CopyPrimitiveVariables::g_firstPlugIndex = 0;
 
@@ -59,6 +61,8 @@ CopyPrimitiveVariables::CopyPrimitiveVariables( const std::string &name )
 	addChild( new ScenePlug( "source" ) );
 	addChild( new StringPlug( "primitiveVariables", Plug::In, "" ) );
 	addChild( new StringPlug( "sourceLocation" ) );
+	addChild( new StringPlug( "prefix" ) );
+	addChild( new BoolPlug( "ignoreIncompatible" ) );
 }
 
 CopyPrimitiveVariables::~CopyPrimitiveVariables()
@@ -95,12 +99,35 @@ const Gaffer::StringPlug *CopyPrimitiveVariables::sourceLocationPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex + 2 );
 }
 
+Gaffer::StringPlug *CopyPrimitiveVariables::prefixPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 3 );
+}
+
+const Gaffer::StringPlug *CopyPrimitiveVariables::prefixPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 3 );
+}
+
+Gaffer::BoolPlug *CopyPrimitiveVariables::ignoreIncompatiblePlug()
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 4 );
+}
+
+const Gaffer::BoolPlug *CopyPrimitiveVariables::ignoreIncompatiblePlug() const
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 4 );
+}
+
 bool CopyPrimitiveVariables::affectsProcessedObject( const Gaffer::Plug *input ) const
 {
 	return Deformer::affectsProcessedObject( input ) ||
 		input == sourcePlug()->objectPlug() ||
 		input == primitiveVariablesPlug() ||
-		input == sourceLocationPlug()
+		input == prefixPlug() ||
+		input == sourceLocationPlug() ||
+		input == sourcePlug()->existsPlug() ||
+		input == ignoreIncompatiblePlug()
 	;
 }
 
@@ -108,16 +135,13 @@ void CopyPrimitiveVariables::hashProcessedObject( const ScenePath &path, const G
 {
 	Deformer::hashProcessedObject( path, context, h );
 	primitiveVariablesPlug()->hash( h );
+	prefixPlug()->hash( h );
 
-	boost::optional<ScenePath> sourceLocationPath;
+	std::optional<ScenePath> sourceLocationPath;
 	const string sourceLocation = sourceLocationPlug()->getValue();
 	if( !sourceLocation.empty() )
 	{
-		/// \todo When we can use `std::optional` from C++17, `emplace()`
-		/// will return a reference, allowing us to call
-		/// `stringToPath( sourceLocation, sourceLocationPath.emplace() )`.
-		sourceLocationPath.emplace();
-		ScenePlug::stringToPath( sourceLocation, *sourceLocationPath );
+		ScenePlug::stringToPath( sourceLocation, sourceLocationPath.emplace() );
 	}
 
 	if( !sourcePlug()->exists( sourceLocationPath ? *sourceLocationPath : path ) )
@@ -125,6 +149,8 @@ void CopyPrimitiveVariables::hashProcessedObject( const ScenePath &path, const G
 		h = inPlug()->objectPlug()->hash();
 		return;
 	}
+
+	ignoreIncompatiblePlug()->hash( h );
 
 	if( sourceLocationPath )
 	{
@@ -150,15 +176,13 @@ IECore::ConstObjectPtr CopyPrimitiveVariables::computeProcessedObject( const Sce
 		return inputObject;
 	}
 
-	boost::optional<ScenePath> sourceLocationPath;
+	const string prefix = prefixPlug()->getValue();
+
+	std::optional<ScenePath> sourceLocationPath;
 	const string sourceLocation = sourceLocationPlug()->getValue();
 	if( !sourceLocation.empty() )
 	{
-		/// \todo When we can use `std::optional` from C++17, `emplace()`
-		/// will return a reference, allowing us to call
-		/// `stringToPath( sourceLocation, copyFromPath.emplace() )`.
-		sourceLocationPath.emplace();
-		ScenePlug::stringToPath( sourceLocation, *sourceLocationPath );
+		ScenePlug::stringToPath( sourceLocation, sourceLocationPath.emplace() );
 	}
 
 	if( !sourcePlug()->exists( sourceLocationPath ? *sourceLocationPath : path ) )
@@ -182,6 +206,8 @@ IECore::ConstObjectPtr CopyPrimitiveVariables::computeProcessedObject( const Sce
 		return inputObject;
 	}
 
+	bool ignoreIncompatible = ignoreIncompatiblePlug()->getValue();
+
 	PrimitivePtr result = primitive->copy();
 	for( auto &variable : sourcePrimitive->variables )
 	{
@@ -191,14 +217,20 @@ IECore::ConstObjectPtr CopyPrimitiveVariables::computeProcessedObject( const Sce
 		}
 		if( !result->isPrimitiveVariableValid( variable.second ) )
 		{
+			if( ignoreIncompatible )
+			{
+				continue;
+			}
 			string destinationPath; ScenePlug::pathToString( path, destinationPath );
 			const string &sourcePath = sourceLocation.size() ? sourceLocation : destinationPath;
-			throw IECore::Exception( boost::str(
-				boost::format( "Cannot copy \"%1%\" from \"%2%\" to \"%3%\" because source and destination primitives have different topology" )
-					% variable.first % destinationPath % sourcePath
+			throw IECore::Exception( fmt::format(
+				"Cannot copy \"{}\" from \"{}\" to \"{}\" because source and "
+				"destination primitives have different topology. Turn on `ignoreIncompatible` "
+				"to disable this error and ignore invalid primitive variables.",
+				variable.first, sourcePath, destinationPath
 			) );
 		}
-		result->variables[variable.first] = variable.second;
+		result->variables[prefix + variable.first] = variable.second;
 	}
 
 	return result;
@@ -211,5 +243,5 @@ bool CopyPrimitiveVariables::adjustBounds() const
 		return false;
 	}
 
-	return StringAlgo::matchMultiple( "P", primitiveVariablesPlug()->getValue() );
+	return StringAlgo::matchMultiple( "P", primitiveVariablesPlug()->getValue() ) && prefixPlug()->isSetToDefault();
 }

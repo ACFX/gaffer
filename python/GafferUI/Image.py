@@ -35,7 +35,6 @@
 ##########################################################################
 
 import os
-import six
 import imath
 
 import IECore
@@ -48,8 +47,7 @@ from Qt import QtGui
 from Qt import QtWidgets
 
 ## The Image widget displays an image. This can be specified
-# as either a filename, in which case the image is loaded using
-# the IECore.Reader mechanism, or an IECore.ImagePrimitive.
+# as either a filename or an IECore.ImagePrimitive.
 class Image( GafferUI.Widget ) :
 
 	def __init__( self, imagePrimitiveOrFileName, **kw ) :
@@ -60,16 +58,65 @@ class Image( GafferUI.Widget ) :
 		# the same size.
 		self._qtWidget().setSizePolicy( QtWidgets.QSizePolicy( QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed ) )
 
-		if isinstance( imagePrimitiveOrFileName, six.string_types ) :
+		if isinstance( imagePrimitiveOrFileName, str ) :
 			pixmap = self._qtPixmapFromFile( str( imagePrimitiveOrFileName ) )
-		else :
+		elif isinstance( imagePrimitiveOrFileName, IECoreImage.ImagePrimitive ) :
 			pixmap = self._qtPixmapFromImagePrimitive( imagePrimitiveOrFileName )
+		else :
+			pixmap = None
 
 		if pixmap is not None :
 			self._qtWidget().setPixmap( pixmap )
 
 		self.__pixmapHighlighted = None
 		self.__pixmapDisabled = None
+
+	## Creates an Image containing a color swatch useful for
+	# button and menu icons. An `image` can be overlaid on
+	# top of the swatch, this will be scaled to fit.
+	@staticmethod
+	def createSwatch( color, image = None ) :
+
+		pixmap = QtGui.QPixmap( 14, 14 )
+		pixmap.fill( QtGui.QColor( 0, 0, 0, 0 ) )
+
+		painter = QtGui.QPainter( pixmap )
+		painter.setRenderHint( QtGui.QPainter.Antialiasing )
+		painter.setPen( GafferUI._StyleSheet.styleColor( "backgroundDarkHighlight" ) )
+		painter.setBrush( QtGui.QColor.fromRgbF( color[0], color[1], color[2] ) )
+		painter.drawRoundedRect( QtCore.QRectF( 0.5, 0.5, 13, 13 ), 2, 2 )
+
+		if image is not None :
+
+			try :
+				iconImage = GafferUI.Image( image )
+			except Exception as e:
+				IECore.msg( IECore.Msg.Level.Error, "GafferUI.Image",
+					"Could not read image for swatch icon : " + str( e )
+				)
+				iconImage = GafferUI.Image( "warningSmall.png" )
+
+			iconSize = pixmap.size() - QtCore.QSize( 2, 2 )
+			iconPixmap = iconImage._qtPixmap()
+			if iconPixmap.width() > iconSize.width() or iconPixmap.height() > iconSize.height() :
+				iconPixmap = iconPixmap.scaled(
+					iconSize,
+					QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+					QtCore.Qt.TransformationMode.SmoothTransformation
+				)
+
+			painter.drawPixmap(
+				( pixmap.width() - iconPixmap.width() ) // 2,
+				( pixmap.height() - iconPixmap.height() ) // 2,
+				iconPixmap
+			)
+
+		del painter
+
+		swatch = GafferUI.Image( None )
+		swatch._qtWidget().setPixmap( pixmap )
+
+		return swatch
 
 	def _qtPixmap( self ) :
 
@@ -105,9 +152,14 @@ class Image( GafferUI.Widget ) :
 			graphicsView.render(
 				painter,
 				QtCore.QRectF(),
+				# Note the silly off-by-one issue here that requires a -1.  From the Qt docs:
+				# "There is a third constructor that creates a QRect using the top-left and bottom-right
+				# coordinates, but we recommend that you avoid using it. The rationale is that for historical
+				# reasons the values returned by the bottom() and right() functions deviate from the true
+				# bottom-right corner of the rectangle."
 				QtCore.QRect(
 					graphicsView.mapFromScene( pixmapItem.boundingRect().topLeft() ),
-					graphicsView.mapFromScene( pixmapItem.boundingRect().bottomRight() )
+					graphicsView.mapFromScene( pixmapItem.boundingRect().bottomRight() ) - QtCore.QPoint(1,1)
 				)
 			)
 			del painter # must delete painter before image
@@ -143,9 +195,14 @@ class Image( GafferUI.Widget ) :
 			graphicsView.render(
 				painter,
 				QtCore.QRectF(),
+				# Note the silly off-by-one issue here that requires a -1.  From the Qt docs:
+				# "There is a third constructor that creates a QRect using the top-left and bottom-right
+				# coordinates, but we recommend that you avoid using it. The rationale is that for historical
+				# reasons the values returned by the bottom() and right() functions deviate from the true
+				# bottom-right corner of the rectangle."
 				QtCore.QRect(
 					graphicsView.mapFromScene( pixmapItem.boundingRect().topLeft() ),
-					graphicsView.mapFromScene( pixmapItem.boundingRect().bottomRight() )
+					graphicsView.mapFromScene( pixmapItem.boundingRect().bottomRight() ) - QtCore.QPoint(1,1)
 				)
 			)
 			del painter # must delete painter before image
@@ -162,6 +219,10 @@ class Image( GafferUI.Widget ) :
 		icon.addPixmap( self._qtPixmapDisabled(), QtGui.QIcon.Disabled )
 		return icon
 
+	## \todo Deprecate and remove - we want to phase out ImagePrimitive.
+	# Although we don't use this function or the `Image( ImagePrimitive )`
+	# constructor in Gaffer itself, we can't do this immediately because some
+	# external code currently depends on it.
 	@staticmethod
 	def _qtPixmapFromImagePrimitive( image ) :
 
@@ -229,14 +290,7 @@ class Image( GafferUI.Widget ) :
 		if not resolvedFileName :
 			raise Exception( "Unable to find file \"%s\"" % fileName )
 
-		reader = IECore.Reader.create( resolvedFileName )
-
-		image = reader.read()
-		if not isinstance( image, IECoreImage.ImagePrimitive ) :
-			raise Exception( "File \"%s\" is not an image file" % resolvedFileName )
-
-		result = cls._qtPixmapFromImagePrimitive( image )
-
+		result = QtGui.QPixmap( resolvedFileName )
 		cost = result.width() * result.height() * ( 4 if result.hasAlpha() else 3 )
 
 		return ( result, cost )

@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_FLATTEN_H
-#define GAFFERIMAGE_FLATTEN_H
+#pragma once
 
 #include "Gaffer/NumericPlug.h"
 
@@ -57,10 +56,10 @@ class GAFFERIMAGE_API DeepToFlat : public ImageProcessor
 			None
 		};
 
-		DeepToFlat( const std::string &name=defaultName<DeepToFlat>() );
+		explicit DeepToFlat( const std::string &name=defaultName<DeepToFlat>() );
 		~DeepToFlat() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::DeepToFlat, DeepToFlatTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::DeepToFlat, DeepToFlatTypeId, ImageProcessor );
 
 		Gaffer::IntPlug *depthModePlug();
 		const Gaffer::IntPlug *depthModePlug() const;
@@ -100,5 +99,3 @@ class GAFFERIMAGE_API DeepToFlat : public ImageProcessor
 IE_CORE_DECLAREPTR( DeepToFlat )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_FLATTEN_H

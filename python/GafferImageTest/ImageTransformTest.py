@@ -49,8 +49,7 @@ import GafferImageTest
 
 class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 
-	fileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
-	path = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/" )
+	fileName = GafferImageTest.ImageTestCase.imagesPath() / "checker.exr"
 
 	def testNoPassThrough( self ) :
 
@@ -78,7 +77,7 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		# tiles apart.
 
 		r = GafferImage.ImageReader()
-		r["fileName"].setValue( os.path.join( self.path, "rgb.100x100.exr" ) )
+		r["fileName"].setValue( self.imagesPath() / "rgb.100x100.exr" )
 
 		t = GafferImage.ImageTransform()
 		t["in"].setInput( r["out"] )
@@ -86,7 +85,7 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		t["transform"]["scale"].setValue( imath.V2f( 1.5, 1. ) )
 
 		r2 = GafferImage.ImageReader()
-		r2["fileName"].setValue( os.path.join( self.path, "knownTransformBug.exr" ) )
+		r2["fileName"].setValue( self.imagesPath() / "knownTransformBug.exr" )
 
 		self.assertImagesEqual( t["out"], r2["out"], ignoreMetadata = True, maxDifference = 0.05 )
 
@@ -296,7 +295,7 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 	def testNegativeScale( self ) :
 
 		r = GafferImage.ImageReader()
-		r["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker2x2.exr" ) )
+		r["fileName"].setValue( self.imagesPath() / "checker2x2.exr" )
 
 		t = GafferImage.ImageTransform()
 		t["in"].setInput( r["out"] )
@@ -357,6 +356,8 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		transform["transform"]["pivot"].setValue( imath.V2f( 1500 ) )
 		transform["transform"]["rotate"].setValue( 2.5 )
 
+		GafferImageTest.processTiles( checker["out"] )
+
 		with GafferTest.TestRunner.PerformanceScope() :
 			GafferImageTest.processTiles( transform["out"] )
 
@@ -369,6 +370,8 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		transform = GafferImage.ImageTransform()
 		transform["in"].setInput( checker["out"] )
 		transform["transform"]["translate"].setValue( imath.V2f( 2.2 ) )
+
+		GafferImageTest.processTiles( checker["out"] )
 
 		with GafferTest.TestRunner.PerformanceScope() :
 			GafferImageTest.processTiles( transform["out"] )
@@ -383,6 +386,8 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		transform["in"].setInput( checker["out"] )
 		transform["transform"]["scale"].setValue( imath.V2f( 0.1 ) )
 
+		GafferImageTest.processTiles( checker["out"] )
+
 		with GafferTest.TestRunner.PerformanceScope() :
 			GafferImageTest.processTiles( transform["out"] )
 
@@ -395,6 +400,8 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		transform = GafferImage.ImageTransform()
 		transform["in"].setInput( checker["out"] )
 		transform["transform"]["scale"].setValue( imath.V2f( 3 ) )
+
+		GafferImageTest.processTiles( checker["out"] )
 
 		with GafferTest.TestRunner.PerformanceScope() :
 			GafferImageTest.processTiles( transform["out"] )
@@ -410,6 +417,8 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		transform["transform"]["pivot"].setValue( imath.V2f( 1500 ) )
 		transform["transform"]["rotate"].setValue( 2.5 )
 		transform["transform"]["scale"].setValue( imath.V2f( 0.75 ) )
+
+		GafferImageTest.processTiles( checker["out"] )
 
 		with GafferTest.TestRunner.PerformanceScope() :
 			GafferImageTest.processTiles( transform["out"] )
@@ -429,6 +438,8 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		transform2["in"].setInput( transform1["out"] )
 		transform2["transform"]["translate"].setValue( imath.V2f( 10 ) )
 
+		GafferImageTest.processTiles( checker["out"] )
+
 		with GafferTest.TestRunner.PerformanceScope() :
 			GafferImageTest.processTiles( transform2["out"] )
 
@@ -447,6 +458,8 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 		transform2 = GafferImage.ImageTransform( "Transform2" )
 		transform2["in"].setInput( transform1["out"] )
 		transform2["transform"]["translate"].setValue( imath.V2f( 10 ) )
+
+		GafferImageTest.processTiles( checker["out"] )
 
 		with GafferTest.TestRunner.PerformanceScope() :
 			GafferImageTest.processTiles( transform2["out"] )
@@ -480,7 +493,7 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 
 		self.assertEqual(
 			set( cm.combinedStatistics().variableNames() ),
-			{ "frame", "framesPerSecond", "image:channelName", "image:tileOrigin" },
+			{ "frame", "framesPerSecond", "image:channelName", "image:tileOrigin", "image:viewName" },
 		)
 
 	def testMatrixPlugConnection( self ) :
@@ -575,7 +588,7 @@ class ImageTransformTest( GafferImageTest.ImageTestCase ) :
 			# show that it is legitimate : differences in filtering are that great.
 			# The threshold is still significantly lower than the differences between
 			# checker tiles, so does guarantee that tiles aren't getting out of alignment.
-			self.assertImagesEqual( tc2["out"], t2["out"], maxDifference = 0.11, ignoreDataWindow = True )
+			self.assertImagesEqual( tc2["out"], t2["out"], maxDifference = 0.17, ignoreDataWindow = True )
 
 	def testDisabledAndNonConcatenating( self ) :
 

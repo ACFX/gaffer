@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_OBJECTPROCESSOR_H
-#define GAFFERSCENE_OBJECTPROCESSOR_H
+#pragma once
 
 #include "GafferScene/FilteredSceneProcessor.h"
 
@@ -54,7 +53,7 @@ class GAFFERSCENE_API ObjectProcessor : public FilteredSceneProcessor
 
 		~ObjectProcessor() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::ObjectProcessor, ObjectProcessorTypeId, FilteredSceneProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::ObjectProcessor, ObjectProcessorTypeId, FilteredSceneProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -62,11 +61,11 @@ class GAFFERSCENE_API ObjectProcessor : public FilteredSceneProcessor
 
 		/// Constructs with a single input ScenePlug named "in". Use inPlug()
 		/// to access this plug.
-		ObjectProcessor( const std::string &name );
+		explicit ObjectProcessor( const std::string &name );
 		/// Constructs with an ArrayPlug called "in". Use inPlug() as a
 		/// convenience for accessing the first child in the array, and use
 		/// inPlugs() to access the array itself.
-		ObjectProcessor( const std::string &name, size_t minInputs, size_t maxInputs = Imath::limits<size_t>::max() );
+		ObjectProcessor( const std::string &name, size_t minInputs, size_t maxInputs = std::numeric_limits<size_t>::max() );
 
 		/// Must be implemented by derived classes to return true if `input` is used
 		/// by `computeProcessedObject()`. Overrides must start by calling the base
@@ -80,8 +79,8 @@ class GAFFERSCENE_API ObjectProcessor : public FilteredSceneProcessor
 		virtual void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const = 0;
 		/// Must be implemented by derived classes to return the processed object.
 		virtual IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const = 0;
-		/// Must be implemented to return an appropriate policy if `computeProcessedObject()` spawns
-		/// TBB tasks. The default implementation returns `ValuePlug::CachePolicy::Legacy`.
+		/// Must be implemented to return `ValuePlug::CachePolicy::TaskCollaboration` if `computeProcessedObject()` spawns
+		/// TBB tasks. The default implementation returns `ValuePlug::CachePolicy::Default`.
 		virtual Gaffer::ValuePlug::CachePolicy processedObjectComputeCachePolicy() const;
 
 		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
@@ -120,5 +119,3 @@ class GAFFERSCENE_API ObjectProcessor : public FilteredSceneProcessor
 IE_CORE_DECLAREPTR( ObjectProcessor )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_OBJECTPROCESSOR_H

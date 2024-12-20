@@ -38,6 +38,7 @@
 #include "GafferScene/Group.h"
 
 #include "GafferScene/Private/ChildNamesMap.h"
+#include "GafferScene/SceneAlgo.h"
 
 #include "Gaffer/ArrayPlug.h"
 #include "Gaffer/Context.h"
@@ -46,7 +47,7 @@
 
 #include "IECore/NullObject.h"
 
-#include "OpenEXR/ImathBoxAlgo.h"
+#include "Imath/ImathBoxAlgo.h"
 
 using namespace std;
 using namespace Imath;
@@ -54,7 +55,14 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Group );
+namespace
+{
+
+const ScenePlug::ScenePath g_root;
+
+} // namespace
+
+GAFFER_NODE_DEFINE_TYPE( Group );
 
 size_t Group::g_firstPlugIndex = 0;
 
@@ -64,6 +72,7 @@ Group::Group( const std::string &name )
 	storeIndexOfNextChild( g_firstPlugIndex );
 
 	addChild( new StringPlug( "name", Plug::In, "group" ) );
+	addChild( new StringPlug( "sets" ) );
 	addChild( new TransformPlug( "transform" ) );
 
 	addChild( new Gaffer::ObjectPlug( "__mapping", Gaffer::Plug::Out, NullObject::defaultNullObject() ) );
@@ -95,24 +104,34 @@ const Gaffer::StringPlug *Group::namePlug() const
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
+Gaffer::StringPlug *Group::setsPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::StringPlug *Group::setsPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 1 );
+}
+
 Gaffer::TransformPlug *Group::transformPlug()
 {
-	return getChild<TransformPlug>( g_firstPlugIndex + 1 );
+	return getChild<TransformPlug>( g_firstPlugIndex + 2 );
 }
 
 const Gaffer::TransformPlug *Group::transformPlug() const
 {
-	return getChild<TransformPlug>( g_firstPlugIndex + 1 );
+	return getChild<TransformPlug>( g_firstPlugIndex + 2 );
 }
 
 Gaffer::ObjectPlug *Group::mappingPlug()
 {
-	return getChild<Gaffer::ObjectPlug>( g_firstPlugIndex + 2 );
+	return getChild<Gaffer::ObjectPlug>( g_firstPlugIndex + 3 );
 }
 
 const Gaffer::ObjectPlug *Group::mappingPlug() const
 {
-	return getChild<Gaffer::ObjectPlug>( g_firstPlugIndex + 2 );
+	return getChild<Gaffer::ObjectPlug>( g_firstPlugIndex + 3 );
 }
 
 void Group::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
@@ -121,7 +140,7 @@ void Group::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 
 	if( input == namePlug() )
 	{
-		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
+		for( ValuePlug::Iterator it( outPlug() ); !it.done(); ++it )
 		{
 			outputs.push_back( it->get() );
 		}
@@ -147,10 +166,15 @@ void Group::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 	else if( input == mappingPlug() )
 	{
 		// the mapping affects everything about the output
-		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
+		for( ValuePlug::Iterator it( outPlug() ); !it.done(); ++it )
 		{
 			outputs.push_back( it->get() );
 		}
+	}
+	else if( input == setsPlug() )
+	{
+		outputs.push_back( outPlug()->setNamesPlug() );
+		outputs.push_back( outPlug()->setPlug() );
 	}
 
 }
@@ -161,7 +185,7 @@ void Group::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *contex
 
 	if( output == mappingPlug() )
 	{
-		ScenePlug::PathScope scope( context, ScenePath() );
+		ScenePlug::PathScope scope( context, &g_root );
 		for( const auto &p : ScenePlug::Range( *inPlugs() ) )
 		{
 			p->childNamesPlug()->hash( h );
@@ -174,7 +198,7 @@ void Group::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context )
 	if( output == mappingPlug() )
 	{
 		vector<ConstInternedStringVectorDataPtr> inputChildNames; inputChildNames.reserve( inPlugs()->children().size() );
-		ScenePlug::PathScope scope( context, ScenePath() );
+		ScenePlug::PathScope scope( context, &g_root );
 		for( const auto &p : ScenePlug::Range( *inPlugs() ) )
 		{
 			inputChildNames.push_back( p->childNamesPlug()->getValue() );
@@ -191,7 +215,7 @@ void Group::hashBound( const ScenePath &path, const Gaffer::Context *context, co
 	if( path.size() == 0 ) // "/"
 	{
 		SceneProcessor::hashBound( path, context, parent, h );
-		for( ScenePlugIterator it( inPlugs() ); !it.done(); ++it )
+		for( ScenePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 		{
 			(*it)->boundPlug()->hash( h );
 		}
@@ -200,8 +224,8 @@ void Group::hashBound( const ScenePath &path, const Gaffer::Context *context, co
 	else if( path.size() == 1 ) // "/group"
 	{
 		SceneProcessor::hashBound( path, context, parent, h );
-		ScenePlug::PathScope scope( context, ScenePath() );
-		for( ScenePlugIterator it( inPlugs() ); !it.done(); ++it )
+		ScenePlug::PathScope scope( context, &g_root );
+		for( ScenePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 		{
 			(*it)->boundPlug()->hash( h );
 		}
@@ -221,7 +245,7 @@ Imath::Box3f Group::computeBound( const ScenePath &path, const Gaffer::Context *
 	{
 		// either / or /groupName
 		Box3f combinedBound;
-		for( ScenePlugIterator it( inPlugs() ); !it.done(); ++it )
+		for( ScenePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 		{
 			// we don't need to transform these bounds, because the SceneNode
 			// guarantees that the transform for root nodes is always identity.
@@ -363,8 +387,10 @@ IECore::ConstInternedStringVectorDataPtr Group::computeChildNames( const ScenePa
 {
 	if( path.size() == 0 )
 	{
+		const InternedString name = namePlug()->getValue();
+		SceneAlgo::validateName( name );
 		InternedStringVectorDataPtr result = new InternedStringVectorData();
-		result->writable().push_back( namePlug()->getValue() );
+		result->writable().push_back( name );
 		return result;
 	}
 	else if( path.size() == 1 )
@@ -384,17 +410,18 @@ IECore::ConstInternedStringVectorDataPtr Group::computeChildNames( const ScenePa
 void Group::hashSetNames( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
 	SceneProcessor::hashSetNames( context, parent, h );
-	for( ScenePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ScenePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
 		(*it)->setNamesPlug()->hash( h );
 	}
+	setsPlug()->hash( h );
 }
 
 IECore::ConstInternedStringVectorDataPtr Group::computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	InternedStringVectorDataPtr resultData = new InternedStringVectorData;
 	vector<InternedString> &result = resultData->writable();
-	for( ScenePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ScenePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
 		// This naive approach to merging set names preserves the order of the incoming names,
 		// but at the expense of using linear search. We assume that the number of sets is small
@@ -407,6 +434,16 @@ IECore::ConstInternedStringVectorDataPtr Group::computeSetNames( const Gaffer::C
 			{
 				result.push_back( *it );
 			}
+		}
+	}
+
+	vector<InternedString> setNames;
+	IECore::StringAlgo::tokenize( setsPlug()->getValue(), ' ', setNames );
+	for( const auto &s : setNames )
+	{
+		if( std::find( result.begin(), result.end(), s ) == result.end() )
+		{
+			result.push_back( s );
 		}
 	}
 
@@ -424,6 +461,8 @@ void Group::hashSet( const IECore::InternedString &setName, const Gaffer::Contex
 	ScenePlug::GlobalScope s( context );
 	mappingPlug()->hash( h );
 	namePlug()->hash( h );
+	setsPlug()->hash( h );
+	h.append( setName );
 }
 
 IECore::ConstPathMatcherDataPtr Group::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
@@ -437,9 +476,17 @@ IECore::ConstPathMatcherDataPtr Group::computeSet( const IECore::InternedString 
 	ScenePlug::GlobalScope s( context );
 	Private::ConstChildNamesMapPtr mapping = boost::static_pointer_cast<const Private::ChildNamesMap>( mappingPlug()->getValue() );
 	const InternedString name = namePlug()->getValue();
+	SceneAlgo::validateName( name );
 
 	PathMatcherDataPtr resultData = new PathMatcherData;
 	resultData->writable().addPaths( mapping->set( inputSets ), { name } );
+
+	vector<InternedString> setNames;
+	IECore::StringAlgo::tokenize( setsPlug()->getValue(), ' ', setNames );
+	if( std::find( setNames.begin(), setNames.end(), setName ) != setNames.end() )
+	{
+		resultData->writable().addPath( ScenePath( { name } ) );
+	}
 
 	return resultData;
 }

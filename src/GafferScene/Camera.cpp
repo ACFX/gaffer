@@ -40,7 +40,6 @@
 #include "Gaffer/StringPlug.h"
 
 #include "IECoreScene/Camera.h"
-#include "IECoreScene/Transform.h"
 
 #include "IECore/AngleConversion.h"
 
@@ -52,7 +51,7 @@ using namespace IECore;
 
 static IECore::InternedString g_camerasSetName( "__cameras" );
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Camera );
+GAFFER_NODE_DEFINE_TYPE( Camera );
 
 size_t Camera::g_firstPlugIndex = 0;
 

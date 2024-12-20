@@ -35,8 +35,7 @@
 /////////////////////////////////////////////////////////////////////////
 
 
-#ifndef GAFFERSCENE_DELETECURVES_H
-#define GAFFERSCENE_DELETECURVES_H
+#pragma once
 
 #include "GafferScene/Deformer.h"
 
@@ -55,7 +54,7 @@ class GAFFERSCENE_API DeleteCurves : public Deformer
 
 	public :
 
-		DeleteCurves( const std::string &name = defaultName<DeleteCurves>() );
+		explicit DeleteCurves( const std::string &name = defaultName<DeleteCurves>() );
 		~DeleteCurves() override;
 
 		Gaffer::StringPlug *curvesPlug();
@@ -64,7 +63,10 @@ class GAFFERSCENE_API DeleteCurves : public Deformer
 		Gaffer::BoolPlug *invertPlug();
 		const Gaffer::BoolPlug *invertPlug() const;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::DeleteCurves, DeleteCurvesTypeId, Deformer );
+		Gaffer::BoolPlug *ignoreMissingVariablePlug();
+		const Gaffer::BoolPlug *ignoreMissingVariablePlug() const;
+
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::DeleteCurves, DeleteCurvesTypeId, Deformer );
 
 	protected :
 
@@ -81,6 +83,3 @@ class GAFFERSCENE_API DeleteCurves : public Deformer
 IE_CORE_DECLAREPTR( DeleteCurves )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_DELETECURVES_H
-

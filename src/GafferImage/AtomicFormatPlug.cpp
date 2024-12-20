@@ -42,7 +42,7 @@
 #include "Gaffer/Context.h"
 #include "Gaffer/Process.h"
 #include "Gaffer/TypedPlug.h"
-#include "Gaffer/TypedPlug.inl"
+#include "Gaffer/TypedPlugImplementation.h"
 
 using namespace Gaffer;
 using namespace GafferImage;
@@ -55,7 +55,8 @@ GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( GafferImage::AtomicFormatPlug, AtomicFormatPlu
 template<>
 Format AtomicFormatPlug::getValue( const IECore::MurmurHash *precomputedHash ) const
 {
-	ConstFormatDataPtr d = getObjectValue<FormatData>( precomputedHash );
+	IECore::ConstObjectPtr owner;
+	const FormatData *d = getObjectValue<FormatData>( owner, precomputedHash );
 	Format result = d->readable();
 	if( result.getDisplayWindow().isEmpty() && ( ( direction() == Plug::In && Process::current() ) || direction() == Plug::Out ) )
 	{

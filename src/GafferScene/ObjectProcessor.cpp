@@ -42,7 +42,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ObjectProcessor );
+GAFFER_NODE_DEFINE_TYPE( ObjectProcessor );
 
 size_t ObjectProcessor::g_firstPlugIndex;
 
@@ -95,12 +95,6 @@ const Gaffer::ObjectPlug *ObjectProcessor::processedObjectPlug() const
 void ObjectProcessor::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	FilteredSceneProcessor::affects( input, outputs );
-
-	if( !refCount() )
-	{
-		// Avoid calling pure virtual methods while we're still constructing.
-		return;
-	}
 
 	if( affectsProcessedObject( input ) )
 	{
@@ -164,7 +158,7 @@ void ObjectProcessor::hashProcessedObject( const ScenePath &path, const Gaffer::
 
 Gaffer::ValuePlug::CachePolicy ObjectProcessor::processedObjectComputeCachePolicy() const
 {
-	return ValuePlug::CachePolicy::Legacy;
+	return ValuePlug::CachePolicy::Default;
 }
 
 void ObjectProcessor::hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const

@@ -42,7 +42,7 @@
 #include "Gaffer/NameSwitch.h"
 #include "Gaffer/NameValuePlug.h"
 
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -66,6 +66,11 @@ class NameSwitchPlugAdder : public PlugAdder
 		bool canCreateConnection( const Plug *endpoint ) const override
 		{
 			if( !PlugAdder::canCreateConnection( endpoint ) )
+			{
+				return false;
+			}
+
+			if( MetadataAlgo::readOnly( m_plug.get() ) )
 			{
 				return false;
 			}
@@ -130,7 +135,7 @@ struct Registration
 
 	Registration()
 	{
-		NoduleLayout::registerCustomGadget( "GafferUI.NameSwitchUI.PlugAdder", boost::bind( &create, ::_1 ) );
+		NoduleLayout::registerCustomGadget( "GafferUI.NameSwitchUI.PlugAdder", &create );
 	}
 
 	private :
@@ -149,4 +154,3 @@ struct Registration
 Registration g_registration;
 
 } // namespace
-

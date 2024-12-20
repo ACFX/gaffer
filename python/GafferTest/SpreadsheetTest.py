@@ -35,7 +35,6 @@
 ##########################################################################
 
 import inspect
-import six
 import unittest
 
 import imath
@@ -432,19 +431,19 @@ class SpreadsheetTest( GafferTest.TestCase ) :
 
 		self.assertEqual( s2["b"]["s"]["rows"].getInput(), s2["b"]["rows"] )
 
-	def testActiveRowNames( self ) :
+	def testEnabledRowNames( self ) :
 
 		s = Gaffer.Spreadsheet()
 		for i in range( 1, 4 ) :
 			s["rows"].addRow()["name"].setValue( str( i ) )
 
-		self.assertEqual( s["activeRowNames"].getValue(), IECore.StringVectorData( [ "1", "2", "3" ] ) )
+		self.assertEqual( s["enabledRowNames"].getValue(), IECore.StringVectorData( [ "1", "2", "3" ] ) )
 
 		s["rows"][1]["enabled"].setValue( False )
-		self.assertEqual( s["activeRowNames"].getValue(), IECore.StringVectorData( [ "2", "3" ] ) )
+		self.assertEqual( s["enabledRowNames"].getValue(), IECore.StringVectorData( [ "2", "3" ] ) )
 
 		s["rows"][2]["name"].setValue( "two" )
-		self.assertEqual( s["activeRowNames"].getValue(), IECore.StringVectorData( [ "two", "3" ] ) )
+		self.assertEqual( s["enabledRowNames"].getValue(), IECore.StringVectorData( [ "two", "3" ] ) )
 
 	def testAddColumnUsingDynamicPlug( self ) :
 
@@ -524,12 +523,12 @@ class SpreadsheetTest( GafferTest.TestCase ) :
 		otherRow = s2["rows"].addRow()
 		self.assertEqual( len( s["rows"] ), 3 )
 
-		with six.assertRaisesRegex( self, RuntimeError, 'Cannot remove default row from "Spreadsheet.rows"' ) :
+		with self.assertRaisesRegex( RuntimeError, 'Cannot remove default row from "Spreadsheet.rows"' ) :
 			s["rows"].removeRow( defaultRow )
 
 		self.assertEqual( len( s["rows"] ), 3 )
 
-		with six.assertRaisesRegex( self, RuntimeError, 'Row "other.rows.row1" is not a child of "Spreadsheet.rows"' ) :
+		with self.assertRaisesRegex( RuntimeError, 'Row "other.rows.row1" is not a child of "Spreadsheet.rows"' ) :
 			s["rows"].removeRow( otherRow )
 
 		self.assertEqual( len( s["rows"] ), 3 )
@@ -551,8 +550,8 @@ class SpreadsheetTest( GafferTest.TestCase ) :
 			except Exception as e :
 				exceptions.append( e )
 
-		script["sheet"]["out"].childAddedSignal().connect( outputAddedOrRemoved, scoped = False )
-		script["sheet"]["out"].childRemovedSignal().connect( outputAddedOrRemoved, scoped = False )
+		script["sheet"]["out"].childAddedSignal().connect( outputAddedOrRemoved )
+		script["sheet"]["out"].childRemovedSignal().connect( outputAddedOrRemoved )
 
 		with Gaffer.UndoScope( script ) :
 			script["sheet"]["rows"].addColumn( Gaffer.StringPlug( "column1" ) )
@@ -830,7 +829,7 @@ class SpreadsheetTest( GafferTest.TestCase ) :
 	def testAdoptedEnabledPlugChecks( self ) :
 
 		s = Gaffer.Spreadsheet()
-		with six.assertRaisesRegex( self, RuntimeError, 'Value plug has no "enabled" plug to adopt' ) :
+		with self.assertRaisesRegex( RuntimeError, 'Value plug has no "enabled" plug to adopt' ) :
 			s["rows"].addColumn( Gaffer.IntPlug(), adoptEnabledPlug = True )
 
 	def testAdoptedEnabledPlugSerialisation( self ) :
@@ -847,6 +846,164 @@ class SpreadsheetTest( GafferTest.TestCase ) :
 			self.assertNotIn( "enabled", row["cells"]["c1"] )
 			self.assertEqual( row["cells"]["c1"].enabledPlug(), row["cells"]["c1"]["value"]["enabled"] )
 			self.assertEqual( row["cells"]["c1"].enabledPlug().getValue(), True )
+
+	def testDefaultValueSerialisation( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["s"] = Gaffer.Spreadsheet()
+		s["s"]["rows"].addColumn( Gaffer.V3iPlug( "c1", defaultValue = imath.V3i( 1, 2, 3 ) ) )
+		s["s"]["rows"].addColumn( Gaffer.Box2iPlug( "c2", defaultValue = imath.Box2i( imath.V2i( 0 ), imath.V2i( 1 ) ) ) )
+		s["s"]["rows"].addRows( 3 )
+
+		# Change defaults for some plugs
+
+		s["s"]["rows"][1]["name"].setValue( "testName" )
+		s["s"]["rows"][1]["cells"]["c1"]["value"].setValue( imath.V3i( 4, 5, 6 ) )
+		s["s"]["rows"][2]["enabled"].setValue( False )
+		s["s"]["rows"][2]["cells"]["c1"]["value"]["x"].setValue( 10 )
+		s["s"]["rows"][3]["cells"]["c1"]["enabled"].setValue( False )
+		s["s"]["rows"][3]["cells"]["c2"]["value"].setValue( imath.Box2i( imath.V2i( 10 ), imath.V2i( 11 ) ) )
+		s["s"]["rows"][1]["name"].resetDefault()
+
+		# Change values for some plugs, some of which also had their
+		# defaults changed.
+
+		s["s"]["rows"][1]["name"].setValue( "testName2" )
+		s["s"]["rows"][1]["cells"]["c1"]["value"]["x"].setValue( 7 )
+		s["s"]["rows"][3]["enabled"].setValue( False )
+
+		# Check that everything round-trips correctly through a serialisation and load.
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertEqual( s["s"]["rows"].defaultHash(), s2["s"]["rows"].defaultHash() )
+		self.assertEqual( s["s"]["rows"].hash(), s2["s"]["rows"].hash() )
+
+	def testResolvedRows( self ) :
+
+		s = Gaffer.Spreadsheet()
+		s["rows"].addColumn( Gaffer.IntPlug( "c1", defaultValue = 10 ) )
+		s["rows"].addColumn( Gaffer.StringPlug( "c2", defaultValue = "" ) )
+		s["rows"].addColumn( Gaffer.V2iPlug( "c3", defaultValue = imath.V2i( 0 ) ) )
+		s["rows"].addRows( 3 )
+		s["rows"][1]["name"].setValue( "row1" )
+		s["rows"][2]["name"].setValue( "row2" )
+		s["rows"][3]["name"].setValue( "row3" )
+
+		def assertExpectedValues( expected ) :
+
+			resolved = s["resolvedRows"].getValue()
+			self.assertIsInstance( resolved, IECore.CompoundObject )
+			self.assertEqual( len( resolved ), len( expected ) )
+
+			for name, expectedRow in expected.items() :
+				self.assertEqual( resolved[name]["c1"].value, expectedRow[0] )
+				self.assertEqual( resolved[name]["c2"].value, expectedRow[1] )
+				self.assertEqual( resolved[name]["c3"].value, expectedRow[2] )
+
+		assertExpectedValues( {
+			"row1" : [ 10, "", imath.V2i( 0 ) ],
+			"row2" : [ 10, "", imath.V2i( 0 ) ],
+			"row3" : [ 10, "", imath.V2i( 0 ) ],
+		} )
+
+		s["rows"][1]["cells"]["c1"]["value"].setValue( 20 )
+		s["rows"][2]["cells"]["c2"]["value"].setValue( "b" )
+		s["rows"][3]["cells"]["c3"]["value"].setValue( imath.V2i( 10 ) )
+
+		assertExpectedValues( {
+			"row1" : [ 20, "", imath.V2i( 0 ) ],
+			"row2" : [ 10, "b", imath.V2i( 0 ) ],
+			"row3" : [ 10, "", imath.V2i( 10 ) ],
+		} )
+
+		s["rows"][1]["cells"]["c1"]["enabled"].setValue( False )
+
+		assertExpectedValues( {
+			"row1" : [ 10, "", imath.V2i( 0 ) ],
+			"row2" : [ 10, "b", imath.V2i( 0 ) ],
+			"row3" : [ 10, "", imath.V2i( 10 ) ],
+		} )
+
+		s["rows"][3]["enabled"].setValue( False )
+
+		assertExpectedValues( {
+			"row1" : [ 10, "", imath.V2i( 0 ) ],
+			"row2" : [ 10, "b", imath.V2i( 0 ) ],
+		} )
+
+		s["rows"][2]["name"].setValue( "row1" )
+
+		assertExpectedValues( {
+			"row1" : [ 10, "", imath.V2i( 0 ) ],
+		} )
+
+	def testReorderRows( self ) :
+
+		spreadsheet = Gaffer.Spreadsheet()
+		spreadsheet["rows"].addColumn( Gaffer.IntPlug( "c1", defaultValue = 10 ) )
+		spreadsheet["selector"].setValue( "test" )
+
+		# Two rows with the same name. The first one should win.
+
+		spreadsheet["rows"].addRows( 2 )
+		spreadsheet["rows"][1]["name"].setValue( "test" )
+		spreadsheet["rows"][1]["cells"]["c1"]["value"].setValue( 20 )
+		spreadsheet["rows"][2]["name"].setValue( "test" )
+		spreadsheet["rows"][2]["cells"]["c1"]["value"].setValue( 30 )
+
+		self.assertEqual( spreadsheet["out"]["c1"].getValue(), 20 )
+		self.assertEqual( spreadsheet["rows"].row( "test" ), spreadsheet["rows"][1] )
+
+		# And if you reorder them, the (new) first one should still win.
+
+		spreadsheet["rows"].reorderChildren( [ spreadsheet["rows"][0], spreadsheet["rows"][2], spreadsheet["rows"][1] ] )
+		self.assertEqual( spreadsheet["out"]["c1"].getValue(), 30 )
+		self.assertEqual( spreadsheet["rows"].row( "test" ), spreadsheet["rows"][1] )
+
+	def testUnnamedRowsNeverMatch( self ) :
+
+		s = Gaffer.Spreadsheet()
+		s["rows"].addColumn( Gaffer.IntPlug( "i" ) )
+		row = s["rows"].addRow()
+
+		row["name"].setValue( "" )
+		row["cells"]["i"]["value"].setValue( 1 )
+
+		# Selector is "", but we shouldn't match it to the unnamed row because
+		# that is unintuitive. As a general rule in Gaffer, if something
+		# hasn't been given a name then it is treated as if it was disabled.
+		self.assertEqual( s["out"]["i"].getValue(), 0 )
+		# That should be reinforced by excluding the row from the `enabledRowNames`
+		# and `resolvedRows` outputs.
+		self.assertEqual( s["enabledRowNames"].getValue(), IECore.StringVectorData() )
+		self.assertNotIn( "", s["resolvedRows"].getValue() )
+
+		# The same should apply even when the selector receives the empty value
+		# via a substitution.
+		s["selector"].setValue( "${selector}" )
+		with Gaffer.Context() as c :
+			self.assertEqual( s["out"]["i"].getValue(), 0 )
+			# If the variable exists but is empty, we _still_ don't want to
+			# match the empty row. The existence of the variable is not what we
+			# care about : the existence of the row is, and we treat unnamed
+			# rows as non-existent.
+			c["selector"] = ""
+			self.assertEqual( s["out"]["i"].getValue(), 0 )
+			self.assertEqual( s["enabledRowNames"].getValue(), IECore.StringVectorData() )
+			self.assertNotIn( "", s["resolvedRows"].getValue() )
+			# But by that logic, a row named '*' _should_ match the empty
+			# variable.
+			row["name"].setValue( "*" )
+			self.assertEqual( s["out"]["i"].getValue(), 1 )
+			self.assertEqual( s["enabledRowNames"].getValue(), IECore.StringVectorData( [ "*" ] ) )
+			self.assertIn( "*", s["resolvedRows"].getValue() )
+			# Even if the variable doesnt exist at all.
+			del c["selector"]
+			self.assertEqual( s["out"]["i"].getValue(), 1 )
+			self.assertEqual( s["enabledRowNames"].getValue(), IECore.StringVectorData( [ "*" ] ) )
+			self.assertIn( "*", s["resolvedRows"].getValue() )
 
 	@GafferTest.TestRunner.PerformanceTestMethod()
 	def testAddRowPerformance( self ) :
@@ -922,6 +1079,172 @@ class SpreadsheetTest( GafferTest.TestCase ) :
 			r = rows.addRow()
 			r["name"].setValue( name )
 			self.assertEqual( rows.row( name ), r )
+
+	class CustomSpreadsheet( Gaffer.Node ) :
+
+		def __init__( self, name = "CustomSpreadsheet" ) :
+
+			Gaffer.Node.__init__( self, name )
+
+			self["__spreadsheet"] = Gaffer.Spreadsheet()
+			self["__spreadsheet"]["rows"].addColumn( Gaffer.StringPlug( "testString" ) )
+			self["__spreadsheet"]["rows"].addColumn( Gaffer.IntPlug( "testInt" ) )
+
+			Gaffer.PlugAlgo.promote( self["__spreadsheet"]["rows"], excludeMetadata = "*" )
+
+	IECore.registerRunTimeTyped( CustomSpreadsheet )
+
+	Gaffer.Metadata.registerNode(
+		CustomSpreadsheet,
+		plugs = {
+			"rows" : [
+				# Prevents `addColumn()` calls being added to the
+				# serialisation, since we make those calls in our
+				# constructor.
+				"spreadsheet:columnsNeedSerialisation", False,
+			]
+		}
+	)
+
+	def testCustomClassWithRowsPlug( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["box"] = Gaffer.Box()
+		script["box"]["node"] = self.CustomSpreadsheet()
+		self.assertEqual( script["box"]["node"]["rows"][0]["cells"].keys(), [ "testString", "testInt" ] )
+
+		p = Gaffer.PlugAlgo.promote( script["box"]["node"]["rows"] )
+		self.assertEqual( p[0]["cells"].keys(), [ "testString", "testInt" ] )
+
+		script2 = Gaffer.ScriptNode()
+		script2.execute( script.serialise() )
+
+		self.assertEqual( script2["box"]["rows"][0]["cells"].keys(), script["box"]["rows"][0]["cells"].keys() )
+		self.assertEqual( script2["box"]["node"]["rows"][0]["cells"].keys(), script["box"]["node"]["rows"][0]["cells"].keys() )
+
+	def testNameValuePlugResolvedRows( self ) :
+
+		s = Gaffer.Spreadsheet()
+		s["rows"].addColumn(
+			Gaffer.NameValuePlug( nameDefault = "c1Name", valueDefault = 1, defaultEnabled = True, name = "c1" ),
+			adoptEnabledPlug = True,
+		)
+		s["rows"].addColumn(
+			Gaffer.NameValuePlug( nameDefault = "c2Name", valueDefault = 2, defaultEnabled = True, name = "c2" ),
+			adoptEnabledPlug = False,
+		)
+		s["rows"].addColumn(
+			Gaffer.NameValuePlug( nameDefault = "c3Name", valueDefault = 3, name = "c3" )
+		)
+
+		s["rows"].addRows( 2 )
+		s["rows"][1]["name"].setValue( "row1" )
+		s["rows"][2]["name"].setValue( "row2" )
+
+		def assertExpectedValues( expected ) :
+
+			resolved = s["resolvedRows"].getValue()
+			self.assertEqual( set( expected.keys() ), set( resolved.keys() ) )
+
+			for name, expectedRow in expected.items() :
+
+				row = resolved[name]
+				self.assertEqual( set( row.keys() ), set( expectedRow.keys() ) )
+
+				for key, value in row.items() :
+					self.assertEqual(
+						value, IECore.CompoundData( expectedRow[key] )
+					)
+
+		assertExpectedValues( {
+			"row1" : {
+				"c1" : { "name" : "c1Name", "value" : 1, "enabled" : True },
+				"c2" : { "name" : "c2Name", "value" : 2, "enabled" : True },
+				"c3" : { "name" : "c3Name", "value" : 3 },
+			},
+			"row2" : {
+				"c1" : { "name" : "c1Name", "value" : 1, "enabled" : True },
+				"c2" : { "name" : "c2Name", "value" : 2, "enabled" : True },
+				"c3" : { "name" : "c3Name", "value" : 3 },
+			}
+		} )
+
+		s["rows"]["row1"]["cells"]["c1"]["value"]["value"].setValue( 11 )
+		s["rows"]["row2"]["cells"]["c3"]["value"]["name"].setValue( "newName" )
+
+		assertExpectedValues( {
+			"row1" : {
+				"c1" : { "name" : "c1Name", "value" : 11, "enabled" : True },
+				"c2" : { "name" : "c2Name", "value" : 2, "enabled" : True },
+				"c3" : { "name" : "c3Name", "value" : 3 },
+			},
+			"row2" : {
+				"c1" : { "name" : "c1Name", "value" : 1, "enabled" : True },
+				"c2" : { "name" : "c2Name", "value" : 2, "enabled" : True },
+				"c3" : { "name" : "newName", "value" : 3 },
+			}
+		} )
+
+		s["rows"]["row1"]["cells"]["c1"]["value"]["enabled"].setValue( False )
+		s["rows"]["row1"]["cells"]["c2"]["value"]["enabled"].setValue( False )
+		s["rows"]["row1"]["cells"]["c2"]["value"]["value"].setValue( 22 )
+
+		assertExpectedValues( {
+			"row1" : {
+				"c1" : { "name" : "c1Name", "value" : 1, "enabled" : True },
+				"c2" : { "name" : "c2Name", "value" : 22, "enabled" : False },
+				"c3" : { "name" : "c3Name", "value" : 3 },
+			},
+			"row2" : {
+				"c1" : { "name" : "c1Name", "value" : 1, "enabled" : True },
+				"c2" : { "name" : "c2Name", "value" : 2, "enabled" : True },
+				"c3" : { "name" : "newName", "value" : 3 },
+			}
+		} )
+
+	def testRemoveRowRemovesConnections( self ) :
+
+		spreadsheet = Gaffer.Spreadsheet()
+		spreadsheet["rows"].addColumn( Gaffer.FloatPlug( "a" ) )
+		spreadsheet["rows"].addColumn( Gaffer.FloatPlug( "b" ) )
+		row = spreadsheet["rows"].addRow()
+
+		add = GafferTest.AddNode()
+		add["op1"].setInput( row["cells"]["a"]["value"] )
+		row["cells"]["b"]["value"].setInput( add["sum"] )
+
+		spreadsheet["rows"].removeRow( row )
+		self.assertIsNone( row["cells"]["b"]["value"].getInput() )
+		self.assertIsNone( add["op1"].getInput() )
+
+	def testActiveRowIndex( self ) :
+
+		s = Gaffer.Spreadsheet()
+		s["rows"].addRow()["name"].setValue( "a" )
+		s["rows"].addRow()["name"].setValue( "b" )
+		s["selector"].setValue( "${testSelector}" )
+
+		with Gaffer.Context() as c :
+
+			self.assertEqual( s["activeRowIndex"].getValue(), 0 )
+
+			c["testSelector"] = "a"
+			self.assertEqual( s["activeRowIndex"].getValue(), 1 )
+
+			c["testSelector"] = "b"
+			self.assertEqual( s["activeRowIndex"].getValue(), 2 )
+
+	def testRowNameWithStringVectorDataInput( self ) :
+
+		n = Gaffer.Node()
+		n["user"]["stringVector"] = Gaffer.StringVectorDataPlug( defaultValue = IECore.StringVectorData(), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["user"]["stringVector"].setValue( IECore.StringVectorData( [ "a", "b", "c" ] ) )
+
+		s = Gaffer.Spreadsheet()
+		r = s["rows"].addRow()
+		r["name"].setInput( n["user"]["stringVector"] )
+
+		self.assertEqual( s["rows"].row( "a b c" ), r )
 
 if __name__ == "__main__":
 	unittest.main()

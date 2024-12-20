@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_COPYATTRIBUTES_H
-#define GAFFERSCENE_COPYATTRIBUTES_H
+#pragma once
 
 #include "GafferScene/FilteredSceneProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERSCENE_API CopyAttributes : public FilteredSceneProcessor
 
 	public :
 
-		CopyAttributes( const std::string &name=defaultName<CopyAttributes>() );
+		explicit CopyAttributes( const std::string &name=defaultName<CopyAttributes>() );
 		~CopyAttributes() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CopyAttributes, CopyAttributesTypeId, FilteredSceneProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::CopyAttributes, CopyAttributesTypeId, FilteredSceneProcessor );
 
 		GafferScene::ScenePlug *sourcePlug();
 		const GafferScene::ScenePlug *sourcePlug() const;
@@ -82,5 +81,3 @@ class GAFFERSCENE_API CopyAttributes : public FilteredSceneProcessor
 IE_CORE_DECLAREPTR( CopyAttributes )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_COPYATTRIBUTES_H

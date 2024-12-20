@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_DEEPHOLDOUT_H
-#define GAFFERIMAGE_DEEPHOLDOUT_H
+#pragma once
 
 #include "GafferImage/ImageProcessor.h"
 
@@ -51,10 +50,10 @@ class GAFFERIMAGE_API DeepHoldout : public ImageProcessor
 
 	public :
 
-		DeepHoldout( const std::string &name=defaultName<DeepHoldout>() );
+		explicit DeepHoldout( const std::string &name=defaultName<DeepHoldout>() );
 		~DeepHoldout() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::DeepHoldout, DeepHoldoutTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::DeepHoldout, DeepHoldoutTypeId, ImageProcessor );
 
 		GafferImage::ImagePlug *holdoutPlug();
 		const GafferImage::ImagePlug *holdoutPlug() const;
@@ -88,5 +87,3 @@ class GAFFERIMAGE_API DeepHoldout : public ImageProcessor
 IE_CORE_DECLAREPTR( DeepHoldout );
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_DEEPHOLDOUT_H

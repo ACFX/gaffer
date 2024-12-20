@@ -69,6 +69,7 @@ Gaffer.Metadata.registerNode(
 
 	"nodeGadget:minWidth", 0.0,
 	"nodeGadget:padding", 0.5,
+	"nodeGadget:shape", "oval",
 
 	"layout:activator:labelTypeIsCustom", lambda node : node["labelType"].getValue() == node.LabelType.Custom,
 
@@ -174,7 +175,7 @@ def __connectionContextMenu( graphEditor, destinationPlug, menuDefinition ) :
 		}
 	)
 
-GafferUI.GraphEditor.connectionContextMenuSignal().connect( __connectionContextMenu, scoped = False )
+GafferUI.GraphEditor.connectionContextMenuSignal().connect( __connectionContextMenu )
 
 def __setPlugMetadata( plug, key, value ) :
 
@@ -201,4 +202,4 @@ def __graphEditorPlugContextMenu( graphEditor, plug, menuDefinition ) :
 				}
 			)
 
-GafferUI.GraphEditor.plugContextMenuSignal().connect( __graphEditorPlugContextMenu, scoped = False )
+GafferUI.GraphEditor.plugContextMenuSignal().connect( __graphEditorPlugContextMenu )

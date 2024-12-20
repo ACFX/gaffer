@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_IMAGEALGO_INL
-#define GAFFERIMAGE_IMAGEALGO_INL
+#pragma once
 
 #include "GafferImage/BufferAlgo.h"
 #include "GafferImage/ImagePlug.h"
@@ -44,7 +43,8 @@
 
 #include "boost/tuple/tuple.hpp"
 
-#include "tbb/tbb.h"
+#include "tbb/pipeline.h"
+#include "tbb/task_scheduler_init.h"
 
 namespace GafferImage
 {
@@ -256,13 +256,14 @@ template <class TileFunctor>
 void parallelProcessTiles( const ImagePlug *imagePlug, TileFunctor &&functor, const Imath::Box2i &window, TileOrder tileOrder )
 {
 	Imath::Box2i processWindow = window;
-	if( BufferAlgo::empty( processWindow ) )
+	if( processWindow == Imath::Box2i() )
 	{
 		processWindow = imagePlug->dataWindowPlug()->getValue();
-		if( BufferAlgo::empty( processWindow ) )
-		{
-			return;
-		}
+	}
+
+	if( BufferAlgo::empty( processWindow ) )
+	{
+		return;
 	}
 
 	Detail::TileInputIterator tileIterator( processWindow, tileOrder );
@@ -283,7 +284,7 @@ void parallelProcessTiles( const ImagePlug *imagePlug, TileFunctor &&functor, co
 			[ imagePlug, &functor, &threadState ] ( const Imath::V2i &tileOrigin ) {
 
 				ImagePlug::ChannelDataScope channelDataScope( threadState );
-				channelDataScope.setTileOrigin( tileOrigin );
+				channelDataScope.setTileOrigin( &tileOrigin );
 				functor( imagePlug, tileOrigin );
 
 			}
@@ -306,8 +307,10 @@ void parallelProcessTiles( const ImagePlug *imagePlug, const std::vector<std::st
 	// multiple threads needing to compute the same tile channel at the same time, which currently can
 	// resulting in duplicate computes or spinlocking.
 	//
-	// By accessing one channel first on a single thread, we make sure that any shared data is loaded first,
-	// before we access any remaining channels in parallel
+	// In theory, we could access one channel, then run the rest in parallel, but the overhead of a
+	// parallel_for with a small number of items is significant when the upstream network is fast.
+	//
+	// The simplest option is just to process the channels within a tile serially
 
 	if( channelNames.size() == 0 )
 	{
@@ -316,22 +319,13 @@ void parallelProcessTiles( const ImagePlug *imagePlug, const std::vector<std::st
 
 	auto f = [&channelNames, &functor] ( const ImagePlug *imagePlug, const Imath::V2i &tileOrigin )
 	{
-		const Gaffer::ThreadState &threadState = Gaffer::ThreadState::current();
-		{
-			ImagePlug::ChannelDataScope channelDataScope( threadState );
-			channelDataScope.setChannelName( channelNames[0] );
-			functor( imagePlug, channelNames[0], tileOrigin );
-		}
+		ImagePlug::ChannelDataScope channelDataScope( Gaffer::Context::current() );
 
-		tbb::parallel_for_each(
-			channelNames.begin() + 1, channelNames.end(),
-			[&threadState, &functor, imagePlug, tileOrigin]( const std::string &channelName )
-			{
-				ImagePlug::ChannelDataScope channelDataScope( threadState );
-				channelDataScope.setChannelName( channelName );
-				functor( imagePlug, channelName, tileOrigin );
-			}
-		);
+		for( const std::string &c : channelNames )
+		{
+			channelDataScope.setChannelName( &c );
+			functor( imagePlug, c, tileOrigin );
+		}
 	};
 
 	parallelProcessTiles( imagePlug, f, window, tileOrder );
@@ -341,17 +335,18 @@ template <class TileFunctor, class GatherFunctor>
 void parallelGatherTiles( const ImagePlug *imagePlug, const TileFunctor &tileFunctor, GatherFunctor &&gatherFunctor, const Imath::Box2i &window, TileOrder tileOrder )
 {
 	Imath::Box2i processWindow = window;
-	if( BufferAlgo::empty( processWindow ) )
+	if( processWindow == Imath::Box2i() )
 	{
 		processWindow = imagePlug->dataWindowPlug()->getValue();
-		if( BufferAlgo::empty( processWindow ) )
-		{
-			return;
-		}
 	}
 
-	typedef typename std::result_of<TileFunctor( const ImagePlug *, const Imath::V2i & )>::type TileFunctorResult;
-	typedef std::pair<Imath::V2i, TileFunctorResult> TileFilterResult;
+	if( BufferAlgo::empty( processWindow ) )
+	{
+		return;
+	}
+
+	using TileFunctorResult = std::invoke_result_t<TileFunctor, const ImagePlug *, const Imath::V2i &>;
+	using TileFilterResult = std::pair<Imath::V2i, TileFunctorResult>;
 
 	Detail::TileInputIterator tileIterator( processWindow, tileOrder );
 	const Gaffer::ThreadState &threadState = Gaffer::ThreadState::current();
@@ -371,7 +366,7 @@ void parallelGatherTiles( const ImagePlug *imagePlug, const TileFunctor &tileFun
 			[ imagePlug, &tileFunctor, &threadState ] ( const Imath::V2i &tileOrigin ) {
 
 				ImagePlug::ChannelDataScope channelDataScope( threadState );
-				channelDataScope.setTileOrigin( tileOrigin );
+				channelDataScope.setTileOrigin( &tileOrigin );
 
 				return TileFilterResult(
 					tileOrigin, tileFunctor( imagePlug, tileOrigin )
@@ -387,7 +382,7 @@ void parallelGatherTiles( const ImagePlug *imagePlug, const TileFunctor &tileFun
 			[ imagePlug, &gatherFunctor, &threadState ] ( const TileFilterResult &input ) {
 
 				ImagePlug::ChannelDataScope channelDataScope( threadState );
-				channelDataScope.setTileOrigin( input.first );
+				channelDataScope.setTileOrigin( &input.first );
 
 				gatherFunctor( imagePlug, input.first, input.second );
 
@@ -404,8 +399,8 @@ void parallelGatherTiles( const ImagePlug *imagePlug, const TileFunctor &tileFun
 template <class TileFunctor, class GatherFunctor>
 void parallelGatherTiles( const ImagePlug *imagePlug, const std::vector<std::string> &channelNames, const TileFunctor &tileFunctor, GatherFunctor &&gatherFunctor, const Imath::Box2i &window, TileOrder tileOrder )
 {
-	typedef typename std::result_of<TileFunctor( const ImagePlug *, const std::string &, const Imath::V2i & )>::type TileFunctorResult;
-	typedef std::vector< TileFunctorResult > WholeTileResult;
+	using TileFunctorResult = std::invoke_result_t<TileFunctor, const ImagePlug *, const std::string &, const Imath::V2i &>;
+	using WholeTileResult = std::vector<TileFunctorResult>;
 
 	if( channelNames.size() == 0 )
 	{
@@ -417,22 +412,12 @@ void parallelGatherTiles( const ImagePlug *imagePlug, const std::vector<std::str
 		WholeTileResult result;
 		result.resize( channelNames.size() );
 
-		const Gaffer::ThreadState &threadState = Gaffer::ThreadState::current();
+		ImagePlug::ChannelDataScope channelDataScope( Gaffer::Context::current() );
+		for( unsigned int i = 0; i < channelNames.size(); i++ )
 		{
-			ImagePlug::ChannelDataScope channelDataScope( threadState );
-			channelDataScope.setChannelName( channelNames[0] );
-			result[0] = tileFunctor( imagePlug, channelNames[0], tileOrigin );
+			channelDataScope.setChannelName( &channelNames[i] );
+			result[i] = tileFunctor( imagePlug, channelNames[i], tileOrigin );
 		}
-
-		tbb::parallel_for(
-			(size_t)1, channelNames.size(),
-			[&result, threadState, tileFunctor, channelNames, imagePlug, tileOrigin]( int i )
-			{
-				ImagePlug::ChannelDataScope channelDataScope( threadState );
-				channelDataScope.setChannelName( channelNames[i] );
-				result[i] = tileFunctor( imagePlug, channelNames[i], tileOrigin );
-			}
-		);
 
 		return result;
 	};
@@ -451,5 +436,3 @@ void parallelGatherTiles( const ImagePlug *imagePlug, const std::vector<std::str
 } // namespace ImageAlgo
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_IMAGEALGO_INL

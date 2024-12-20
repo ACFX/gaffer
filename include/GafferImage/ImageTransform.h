@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_IMAGETRANSFORM_H
-#define GAFFERSCENE_IMAGETRANSFORM_H
+#pragma once
 
 #include "GafferImage/FlatImageProcessor.h"
 
@@ -56,10 +55,10 @@ class GAFFERIMAGE_API ImageTransform : public FlatImageProcessor
 {
 	public :
 
-		ImageTransform( const std::string &name=defaultName<ImageTransform>() );
+		explicit ImageTransform( const std::string &name=defaultName<ImageTransform>() );
 		~ImageTransform() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::ImageTransform, ImageTransformTypeId, FlatImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::ImageTransform, ImageTransformTypeId, FlatImageProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -133,5 +132,3 @@ class GAFFERIMAGE_API ImageTransform : public FlatImageProcessor
 IE_CORE_DECLAREPTR( ImageTransform )
 
 } // namespace GafferImage
-
-#endif // GAFFERSCENE_IMAGETRANSFORM_H

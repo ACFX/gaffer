@@ -49,13 +49,14 @@
 #include "IECore/Export.h"
 
 IECORE_PUSH_DEFAULT_VISIBILITY
-#include "OpenEXR/ImathEuler.h"
-#include "OpenEXR/ImathMatrixAlgo.h"
+#include "Imath/ImathEuler.h"
+#include "Imath/ImathMatrixAlgo.h"
 IECORE_POP_DEFAULT_VISIBILITY
 
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 
 using namespace std;
+using namespace boost::placeholders;
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
@@ -63,7 +64,7 @@ using namespace GafferUI;
 using namespace GafferScene;
 using namespace GafferSceneUI;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( RotateTool );
+GAFFER_NODE_DEFINE_TYPE( RotateTool );
 
 RotateTool::ToolDescription<RotateTool, SceneView> RotateTool::g_toolDescription;
 
@@ -80,8 +81,8 @@ RotateTool::RotateTool( SceneView *view, const std::string &name )
 		RotateHandlePtr handle = new RotateHandle( axes[i] );
 		handle->setRasterScale( 75 );
 		handles()->setChild( handleNames[i], handle );
-		// connect with group 0, so we get called before the Handle's slot does.
-		handle->dragBeginSignal().connect( 0, boost::bind( &RotateTool::handleDragBegin, this ) );
+		// Connect at front, so we get called before the Handle's slot does.
+		handle->dragBeginSignal().connectFront( boost::bind( &RotateTool::handleDragBegin, this ) );
 		handle->dragMoveSignal().connect( boost::bind( &RotateTool::handleDragMove, this, ::_1, ::_2 ) );
 		handle->dragEndSignal().connect( boost::bind( &RotateTool::handleDragEnd, this ) );
 	}
@@ -91,7 +92,7 @@ RotateTool::RotateTool( SceneView *view, const std::string &name )
 	sg->keyReleaseSignal().connect( boost::bind( &RotateTool::keyRelease, this, ::_2 ) );
 	sg->leaveSignal().connect( boost::bind( &RotateTool::sceneGadgetLeave, this, ::_2 ) );
 	// We have to insert this before the underlying SelectionTool connections or it starts an object drag.
-	sg->buttonPressSignal().connect( 0, boost::bind( &RotateTool::buttonPress, this, ::_2 ) );
+	sg->buttonPressSignal().connectFront( boost::bind( &RotateTool::buttonPress, this, ::_2 ) );
 
 	// We need to track the tool state/view visibility so we don't leave a lingering target cursor
 	sg->visibilityChangedSignal().connect( boost::bind( &RotateTool::visibilityChanged, this, ::_1 ) );
@@ -146,7 +147,7 @@ void RotateTool::updateHandles( float rasterScale )
 		selection().back().orientedTransform( orientation )
 	);
 
-	for( RotateHandleIterator it( handles() ); !it.done(); ++it )
+	for( RotateHandle::Iterator it( handles() ); !it.done(); ++it )
 	{
 		bool enabled = true;
 		for( const auto &s : selection() )
@@ -246,7 +247,7 @@ IECore::RunTimeTypedPtr RotateTool::handleDragBegin()
 
 bool RotateTool::handleDragMove( GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
 {
-	UndoScope undoScope( selection().back().editTarget()->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
+	UndoScope undoScope( view()->scriptNode(), UndoScope::Enabled, undoMergeGroup() );
 	const V3f rotation = static_cast<RotateHandle *>( gadget )->rotation( event );
 	for( auto &r : m_drag )
 	{
@@ -288,7 +289,7 @@ bool RotateTool::buttonPress( const GafferUI::ButtonEvent &event )
 		return true;
 	}
 
-	UndoScope undoScope( selection().back().editTarget()->ancestor<ScriptNode>() );
+	UndoScope undoScope( view()->scriptNode() );
 
 	for( const auto &s : selection() )
 	{
@@ -405,7 +406,8 @@ Imath::V3f RotateTool::Rotation::updatedRotateValue( const Gaffer::V3fPlug *rota
 	Quatf q = rotation.toQuat();
 	V3f transformSpaceAxis;
 	m_gadgetToTransform.multDirMatrix( q.axis(), transformSpaceAxis );
-	q.setAxisAngle( transformSpaceAxis, q.angle() );
+	float d = Imath::sign( m_gadgetToTransform.determinant() );
+	q.setAxisAngle( transformSpaceAxis, q.angle() * d );
 
 	// Compose it with the original.
 

@@ -35,6 +35,7 @@
 ##########################################################################
 
 import os
+import subprocess
 
 import Gaffer
 import GafferUI
@@ -84,19 +85,28 @@ class LayoutsTest( GafferUITest.TestCase ) :
 
 	def testNoPersistentLayoutsInDefaultConfigs( self ) :
 
+		if "GAFFERUITEST_LAYOUTTEST_SUBPROCESS" not in os.environ :
+			# Run test in subprocess, because we don't want to pollute the other
+			# tests with the configs we load.
+			try :
+				env = os.environ.copy()
+				env["GAFFERUITEST_LAYOUTTEST_SUBPROCESS"] = "1"
+				subprocess.check_output(
+					[ str( Gaffer.executablePath() ), "test", "GafferUITest.LayoutsTest.testNoPersistentLayoutsInDefaultConfigs" ],
+					stderr = subprocess.STDOUT,
+					env = env,
+				)
+			except subprocess.CalledProcessError as e :
+				self.fail( e.output )
+			return
+
 		app = Gaffer.Application()
 
 		# Load the GUI config, making sure we only use the standard
 		# startup files, and not any others from the current environment
 		# (the user running these tests may have their own personal configs).
-		startupPaths = os.environ["GAFFER_STARTUP_PATHS"]
-		try :
-			os.environ["GAFFER_STARTUP_PATHS"] = os.path.expandvars( "$GAFFER_ROOT/startup" )
-			app._executeStartupFiles( "gui" )
-		finally :
-			os.environ["GAFFER_STARTUP_PATHS"] = startupPaths
-
-		self.assertEqual( os.environ["GAFFER_STARTUP_PATHS"], startupPaths )
+		os.environ["GAFFER_STARTUP_PATHS"] = str( Gaffer.rootPath() / "startup" )
+		app._executeStartupFiles( "gui" )
 
 		layouts = GafferUI.Layouts.acquire( app )
 		self.assertEqual( layouts.names( persistent = True ), [] )
@@ -181,44 +191,47 @@ class LayoutsTest( GafferUITest.TestCase ) :
 		ns = editors[3].getNodeSet()
 		self.assertTrue( isinstance( ns, Gaffer.StandardSet ) )
 
-	def testSetNodeSetDriverRestore( self ) :
+	def testMissingEditorType( self ) :
 
-		s = Gaffer.ScriptNode()
-		c = GafferUI.CompoundEditor( s )
+		applicationRoot = Gaffer.ApplicationRoot( "testApp" )
+		layouts = GafferUI.Layouts.acquire( applicationRoot )
 
-		GafferUI.NodeSetEditor.registerNodeSetDriverMode( "testMode", lambda e, t : t.getNodeSet() )
+		# Register a layout containing an editor that doesn't exist.
+		layouts.add( "MissingEditor", "GafferUI.NonexistentEditor( scriptNode )" )
 
-		editors = list((
-			GafferUI.NodeEditor( s ),
-			GafferUI.NodeEditor( s ),
-			GafferUI.AnimationEditor( s ),
-			GafferUI.NodeEditor( s )
-		))
+		# Check that we can still create such a layout, and that
+		# it has a proxy with the expected properties.
+		script = Gaffer.ScriptNode()
+		layout = layouts.create( "MissingEditor", script )
+		self.assertIsInstance( layout, GafferUI.Editor )
+		self.assertEqual( layout.getTitle(), "Nonexistent Editor" )
 
-		editors[0].setNodeSetDriver( editors[1] )
-		editors[2].setNodeSetDriver( editors[3], "testMode" )
+		# Save the layout again and check that the same applies.
+		layouts.add( "MissingEditor2", layout )
+		layout2 = layouts.create( "MissingEditor2", script )
+		self.assertIsInstance( layout2, GafferUI.Editor )
+		self.assertEqual( layout2.getTitle(), "Nonexistent Editor" )
 
-		for e in editors :
-			c.addEditor( e )
+	def testMissingEditorModule( self ) :
 
-		a = Gaffer.ApplicationRoot( "testApp" )
-		l = GafferUI.Layouts.acquire( a )
-		l.add( "ReprDriverTest", repr(c), persistent = False )
+		applicationRoot = Gaffer.ApplicationRoot( "testApp" )
+		layouts = GafferUI.Layouts.acquire( applicationRoot )
 
-		cc = l.create( "ReprDriverTest", s )
+		# Register a layout containing an editor from a module that doesn't exist.
+		layouts.add( "MissingEditor", "NonexistentGafferModule.NonexistentEditor( scriptNode )" )
 
-		editors = cc.editors()
+		# Check that we can still create such a layout, and that
+		# it has a proxy with the expected properties.
+		script = Gaffer.ScriptNode()
+		layout = layouts.create( "MissingEditor", script )
+		self.assertIsInstance( layout, GafferUI.Editor )
+		self.assertEqual( layout.getTitle(), "Nonexistent Editor" )
 
-		driver, mode = editors[0].getNodeSetDriver()
-		self.assertTrue( driver is editors[1] )
-		self.assertTrue( mode is GafferUI.NodeSetEditor.DriverModeNodeSet )
-
-		driver, mode = editors[2].getNodeSetDriver()
-		self.assertTrue( driver is editors[3] )
-		self.assertTrue( mode is "testMode" )
-
-		driver, mode = editors[3].getNodeSetDriver()
-		self.assertIsNone( driver )
+		# Save the layout again and check that the same applies.
+		layouts.add( "MissingEditor2", layout )
+		layout2 = layouts.create( "MissingEditor2", script )
+		self.assertIsInstance( layout2, GafferUI.Editor )
+		self.assertEqual( layout2.getTitle(), "Nonexistent Editor" )
 
 if __name__ == "__main__":
 	unittest.main()

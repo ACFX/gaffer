@@ -34,13 +34,6 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-// Workaround for this bug in GCC 4.8 :
-// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59483
-#include "boost/config.hpp"
-#if defined(BOOST_GCC) && BOOST_GCC < 40900
-	#define protected public
-#endif
-
 #include "GafferScene/MergeScenes.h"
 
 #include "GafferScene/SceneAlgo.h"
@@ -58,7 +51,7 @@ using namespace Gaffer;
 using namespace GafferScene;
 
 size_t MergeScenes::g_firstPlugIndex = 0;
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( MergeScenes );
+GAFFER_NODE_DEFINE_TYPE( MergeScenes );
 
 //////////////////////////////////////////////////////////////////////////
 // Internal utilities
@@ -101,6 +94,8 @@ MergeScenes::MergeScenes( const std::string &name )
 	addChild( new BoolPlug( "adjustBounds", Plug::In, true ) );
 	addChild( new IntPlug( "__activeInputs", Plug::Out, 0 ) );
 	addChild( new AtomicBox3fPlug( "__mergedDescendantsBound", Plug::Out ) );
+
+	outPlug()->childBoundsPlug()->setFlags( Plug::AcceptsDependencyCycles, true );
 }
 
 MergeScenes::~MergeScenes()
@@ -183,7 +178,7 @@ void MergeScenes::affects( const Gaffer::Plug *input, AffectedPlugsContainer &ou
 
 	const ScenePlug *scene = inPlugs()->isAncestorOf( input ) ? input->parent<ScenePlug>() : nullptr;
 
-	if( scene && input == scene->childNamesPlug() )
+	if( scene && input == scene->existsPlug() )
 	{
 		outputs.push_back( activeInputsPlug() );
 	}
@@ -214,7 +209,9 @@ void MergeScenes::affects( const Gaffer::Plug *input, AffectedPlugsContainer &ou
 		input == objectModePlug() ||
 		input == adjustBoundsPlug() ||
 		input == activeInputsPlug() ||
-		input == mergedDescendantsBoundPlug()
+		input == mergedDescendantsBoundPlug() ||
+		input == outPlug()->objectPlug() ||
+		input == outPlug()->childBoundsPlug()
 	)
 	{
 		outputs.push_back( outPlug()->boundPlug() );
@@ -298,41 +295,15 @@ void MergeScenes::compute( Gaffer::ValuePlug *output, const Gaffer::Context *con
 
 void MergeScenes::hashActiveInputs( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	const ScenePath &scenePath = context->get<ScenePath>( ScenePlug::scenePathContextName );
-
-	if( scenePath.empty() )
-	{
-		h.append( (uint64_t)connectedInputs().to_ulong() );
-	}
-	else
-	{
-		InputMask parentActiveInputs;
-		{
-			ScenePath parentPath = scenePath; parentPath.pop_back();
-			ScenePlug::PathScope parentScope( context, parentPath );
-			parentActiveInputs = activeInputsPlug()->getValue();
-		}
-
-		if( parentActiveInputs.count() == 1 )
-		{
-			h.append( (uint64_t)parentActiveInputs.to_ulong() );
-		}
-		else
-		{
-			InputMask activeInputs;
-			visit(
-				parentActiveInputs,
-				[&scenePath, &activeInputs] ( InputType type, size_t index, const ScenePlug *scene ) {
-					if( SceneAlgo::exists( scene, scenePath ) )
-					{
-						activeInputs[index] = true;
-					}
-					return true;
-				}
-			);
-			h.append( (uint64_t)activeInputs.to_ulong() );
-		}
-	}
+	// We anticipate very few unique values for the active inputs, as in most
+	// cases they are inherited directly down the hierarchy. So we want to use a
+	// perfect hash to avoid making lots of duplicate cache entries containing
+	// those repeated values. This means our hash needs to use
+	// `scene->existsPlug()->getValue()` rather than
+	// `scene->existsPlug()->hash()`. Which means our hash function is actually
+	// _identical_ to our compute, so we might as well just call it rather than
+	// duplicate the code.
+	h.append( computeActiveInputs( context ) );
 }
 
 int MergeScenes::computeActiveInputs( const Gaffer::Context *context ) const
@@ -342,8 +313,28 @@ int MergeScenes::computeActiveInputs( const Gaffer::Context *context ) const
 	InputMask result;
 	if( scenePath.empty() )
 	{
-		// Root
-		result = connectedInputs();
+		// Root. Every input is active here, but there's a wrinkle : the default
+		// value for `ScenePlug.exists` is `true`, and this is the value we'll
+		// get if the input is not from a computed output. This would mean that
+		// the input would claim to be active for _any_ scene location. We deal
+		// with this once here at the root rather than repeat the workaround at
+		// each descendant location;
+		visit(
+			connectedInputs(),
+			[&result, &scenePath] ( InputType type, size_t index, const ScenePlug *scene ) {
+				if( scene->childNamesPlug()->getValue()->readable().size() )
+				{
+					result[index] = true;
+				}
+				return true;
+			}
+		);
+		if( result.none() )
+		{
+			// Make sure that at least one input is active, so we have
+			// something to use as a pass-through.
+			result[0] = true;
+		}
 	}
 	else
 	{
@@ -351,7 +342,7 @@ int MergeScenes::computeActiveInputs( const Gaffer::Context *context ) const
 		InputMask parentActiveInputs;
 		{
 			ScenePath parentPath = scenePath; parentPath.pop_back();
-			ScenePlug::PathScope parentScope( context, parentPath );
+			ScenePlug::PathScope parentScope( context, &parentPath );
 			parentActiveInputs = activeInputsPlug()->getValue();
 		}
 
@@ -373,7 +364,7 @@ int MergeScenes::computeActiveInputs( const Gaffer::Context *context ) const
 			visit(
 				parentActiveInputs,
 				[&result, &scenePath] ( InputType type, size_t index, const ScenePlug *scene ) {
-					if( SceneAlgo::exists( scene, scenePath ) )
+					if( scene->existsPlug()->getValue() )
 					{
 						result[index] = true;
 					}
@@ -409,7 +400,7 @@ void MergeScenes::hashMergedDescendantsBound( const Gaffer::Context *context, IE
 	for( const auto &childName : childNamesData->readable() )
 	{
 		childPath.back() = childName;
-		childScope.setPath( childPath );
+		childScope.setPath( &childPath );
 		const InputMask childActiveInputs( activeInputsPlug()->getValue() );
 		if( childActiveInputs.count() == 1 && childActiveInputs[firstActiveIndex] )
 		{
@@ -457,7 +448,7 @@ const Imath::Box3f MergeScenes::computeMergedDescendantsBound( const Gaffer::Con
 	for( const auto &childName : childNamesData->readable() )
 	{
 		childPath.back() = childName;
-		childScope.setPath( childPath );
+		childScope.setPath( &childPath );
 		const InputMask childActiveInputs( activeInputsPlug()->getValue() );
 		if( childActiveInputs.count() == 1 && childActiveInputs[firstActiveIndex] )
 		{
@@ -512,7 +503,7 @@ void MergeScenes::hashBound( const ScenePath &path, const Gaffer::Context *conte
 
 	SceneProcessor::hashBound( path, context, parent, h );
 	outPlug()->objectPlug()->hash( h );
-	h.append( outPlug()->childBoundsHash() );
+	outPlug()->childBoundsPlug()->hash( h );
 }
 
 Imath::Box3f MergeScenes::computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
@@ -542,7 +533,7 @@ Imath::Box3f MergeScenes::computeBound( const ScenePath &path, const Gaffer::Con
 	// compute everything by brute force.
 
 	Box3f result = SceneAlgo::bound( outPlug()->objectPlug()->getValue().get() );
-	result.extendBy( outPlug()->childBounds() );
+	result.extendBy( outPlug()->childBoundsPlug()->getValue() );
 	return result;
 }
 
@@ -587,6 +578,7 @@ void MergeScenes::hashAttributes( const ScenePath &path, const Gaffer::Context *
 				case InputType::First :
 					// Initialise hash and fall through
 					SceneProcessor::hashAttributes( path, context, parent, h );
+					[[fallthrough]];
 				case InputType::Other :
 					// Merge input hash
 					scene->attributesPlug()->hash( h );
@@ -615,6 +607,7 @@ IECore::ConstCompoundObjectPtr MergeScenes::computeAttributes( const ScenePath &
 					// fall through.
 					merged = new CompoundObject();
 					result = merged;
+					[[fallthrough]];
 				case InputType::Other :
 					// Merge input attributes into result.
 					ConstCompoundObjectPtr attributes = scene->attributesPlug()->getValue();
@@ -645,6 +638,7 @@ void MergeScenes::hashObject( const ScenePath &path, const Gaffer::Context *cont
 				case InputType::First :
 					// Initialise hash and fall through.
 					SceneProcessor::hashObject( path, context, parent, h );
+					[[fallthrough]];
 				case InputType::Other :
 					// Merge input hash.
 					scene->objectPlug()->hash( h );
@@ -692,6 +686,7 @@ void MergeScenes::hashChildNames( const ScenePath &path, const Gaffer::Context *
 					break;
 				case InputType::First :
 					SceneProcessor::hashChildNames( path, context, parent, h );
+					[[fallthrough]];
 				case InputType::Other :
 					scene->childNamesPlug()->hash( h );
 			}
@@ -756,6 +751,7 @@ void MergeScenes::hashGlobals( const Gaffer::Context *context, const ScenePlug *
 				case InputType::First :
 					// Initialise hash and fall through.
 					SceneProcessor::hashGlobals( context, parent, h );
+					[[fallthrough]];
 				case InputType::Other :
 					// Merge input hash.
 					scene->globalsPlug()->hash( h );
@@ -784,6 +780,7 @@ IECore::ConstCompoundObjectPtr MergeScenes::computeGlobals( const Gaffer::Contex
 					// fall through.
 					merged = new CompoundObject();
 					result = merged;
+					[[fallthrough]];
 				case InputType::Other :
 					// Merge input globals into result.
 					ConstCompoundObjectPtr globals = scene->globalsPlug()->getValue();
@@ -814,6 +811,7 @@ void MergeScenes::hashSetNames( const Gaffer::Context *context, const ScenePlug 
 				case InputType::First :
 					// Initialise hash and fall through.
 					SceneProcessor::hashSetNames( context, parent, h );
+					[[fallthrough]];
 				case InputType::Other :
 					// Merge input hash.
 					scene->setNamesPlug()->hash( h );
@@ -841,6 +839,7 @@ IECore::ConstInternedStringVectorDataPtr MergeScenes::computeSetNames( const Gaf
 					// fall through.
 					merged = new InternedStringVectorData();
 					result = merged;
+					[[fallthrough]];
 				case InputType::Other :
 					// This naive approach to merging set names preserves the order of the incoming names,
 					// but at the expense of using linear search. We assume that the number of sets is small
@@ -850,7 +849,7 @@ IECore::ConstInternedStringVectorDataPtr MergeScenes::computeSetNames( const Gaf
 					{
 						if( std::find( merged->readable().begin(), merged->readable().end(), setName ) == merged->readable().end() )
 						{
-							 merged->writable().push_back( setName );
+							merged->writable().push_back( setName );
 						}
 					}
 			}
@@ -863,6 +862,8 @@ IECore::ConstInternedStringVectorDataPtr MergeScenes::computeSetNames( const Gaf
 
 void MergeScenes::hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
+	/// \todo It might be a good idea to implement a pass-through for
+	/// the cases where the set only exists in one of the inputs.
 	visit(
 		connectedInputs(),
 		[&] ( InputType type, size_t index, const ScenePlug *scene ) {
@@ -875,6 +876,7 @@ void MergeScenes::hashSet( const IECore::InternedString &setName, const Gaffer::
 				case InputType::First :
 					// Initialise hash and fall through.
 					SceneProcessor::hashSet( setName, context, parent, h );
+					[[fallthrough]];
 				case InputType::Other :
 					// Merge input hash.
 					scene->setPlug()->hash( h );
@@ -902,6 +904,7 @@ IECore::ConstPathMatcherDataPtr MergeScenes::computeSet( const IECore::InternedS
 					// fall through.
 					merged = new PathMatcherData();
 					result = merged;
+					[[fallthrough]];
 				case InputType::Other :
 					ConstPathMatcherDataPtr paths = scene->setPlug()->getValue();
 					merged->writable().addPaths( paths->readable() );

@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_FLATIMAGESOURCE_H
-#define GAFFERIMAGE_FLATIMAGESOURCE_H
+#pragma once
 
 #include "GafferImage/ImageNode.h"
 
@@ -51,15 +50,18 @@ class GAFFERIMAGE_API FlatImageSource : public ImageNode
 
 	public :
 
-		FlatImageSource( const std::string &name=defaultName<FlatImageSource>() );
+		explicit FlatImageSource( const std::string &name=defaultName<FlatImageSource>() );
 
 		~FlatImageSource() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::FlatImageSource, FlatImageSourceTypeId, ImageNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::FlatImageSource, FlatImageSourceTypeId, ImageNode );
 
 	protected :
 
 		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
+
+		void hashViewNames( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstStringVectorDataPtr computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 		void hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		bool computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const override;
@@ -72,5 +74,3 @@ class GAFFERIMAGE_API FlatImageSource : public ImageNode
 IE_CORE_DECLAREPTR( FlatImageSource )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_FLATIMAGESOURCE_H

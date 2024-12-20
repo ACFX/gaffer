@@ -41,6 +41,8 @@ import IECore
 import Gaffer
 import GafferUI
 
+from GafferUI.PlugValueWidget import sole
+
 Gaffer.Metadata.registerNode(
 
 	Gaffer.NameSwitch,
@@ -73,8 +75,14 @@ Gaffer.Metadata.registerNode(
 			the `${variableName}` syntax.
 			""",
 
+			"preset:Render Pass", "${renderPass}",
+
 			"nodule:type", "",
 			"divider", True,
+			# Needed to make sure the Settings tab comes first,
+			# because otherwise the first plug is `connectedInputs`
+			# which is in the Advanced tab.
+			"layout:index", 0,
 
 		],
 
@@ -148,6 +156,12 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"connectedInputs" : [
+
+			"layout:index", -3,
+
+		],
+
 	}
 
 )
@@ -165,12 +179,12 @@ class _InPlugValueWidget( GafferUI.PlugValueWidget ) :
 			self.__plugLayout = GafferUI.PlugLayout( plug )
 			self.__addButton = GafferUI.Button( image = "plus.png", hasFrame = False )
 
-		self.__addButton.clickedSignal().connect( Gaffer.WeakMethod( self.__addButtonClicked ), scoped = False )
+		self.__addButton.clickedSignal().connect( Gaffer.WeakMethod( self.__addButtonClicked ) )
 
-		self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ), scoped = False )
-		self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ), scoped = False )
-		self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ), scoped = False )
-		self.dropSignal().connect( 0, Gaffer.WeakMethod( self.__drop ), scoped = False )
+		self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
+		self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ) )
+		self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
+		self.dropSignal().connectFront( Gaffer.WeakMethod( self.__drop ) )
 
 		self.__currentDragTarget = None
 
@@ -178,16 +192,11 @@ class _InPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		return True
 
-	def setReadOnly( self, readOnly ) :
-
-		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
-		self.__plugLayout.setReadOnly( readOnly )
-
 	def childPlugValueWidget( self, childPlug ) :
 
 		return self.__plugLayout.plugValueWidget( childPlug )
 
-	def _updateFromPlug( self ) :
+	def _updateFromEditable( self ) :
 
 		self.__addButton.setEnabled( self._editable() )
 
@@ -311,10 +320,10 @@ class _DragHandle( GafferUI.Image ) :
 
 		GafferUI.Image.__init__( self, "reorderVertically.png", **kw )
 
-		self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ), scoped = False )
-		self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ), scoped = False )
-		self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
-		self.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
+		self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ) )
+		self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ) )
+		self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
+		self.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
 
 	def __enter( self, widget ) :
 
@@ -368,7 +377,6 @@ class _RowPlugValueWidget( GafferUI.PlugValueWidget ) :
 			self.__dragDivider = GafferUI.Divider()
 
 		self.__updateWidgetVisibility()
-		self._updateFromPlug()
 
 	def setPlug( self, plug ) :
 
@@ -392,29 +400,22 @@ class _RowPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		return None
 
-	def setReadOnly( self, readOnly ) :
+	@staticmethod
+	def _valuesForUpdate( plugs, auxiliaryPlugs ) :
 
-		if readOnly == self.getReadOnly() :
-			return
+		return [ p["enabled"].getValue() for p in plugs ]
 
-		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
+	def _updateFromValues( self, values, exception ) :
 
-		for w in self.__plugValueWidgets :
-			w.setReadOnly( readOnly )
-
-	def _updateFromPlug( self ) :
-
-		enabled = False
-		with self.getContext() :
-			with IECore.IgnoredExceptions( Gaffer.ProcessException ) :
-				enabled = self.getPlug()["enabled"].getValue()
-
+		enabled = sole( values ) or False
 		self.__plugValueWidgets[0].setEnabled( enabled )
 		self.__plugValueWidgets[2].setEnabled( enabled )
 
-		self.__dragHandle.setEnabled(
-			not self.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( self.getPlug() )
-		)
+	def _updateFromEditable( self ) :
+
+		# Not using `_editable()` as it considers the whole plug to be non-editable if
+		# any child has an input connection, but that shouldn't prevent us reordering rows.
+		self.__dragHandle.setEnabled( not Gaffer.MetadataAlgo.readOnly( self.getPlug() ) )
 
 	def __updateWidgetVisibility( self ) :
 

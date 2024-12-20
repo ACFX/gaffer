@@ -69,6 +69,11 @@ bool getPrunedWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &pat
 	return EditScopeAlgo::getPruned( &scope, path );
 }
 
+GraphComponentPtr prunedReadOnlyReasonWrapper( Gaffer::EditScope &scope )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::prunedReadOnlyReason( &scope ) );
+}
+
 bool hasTransformEditWrapper( const Gaffer::EditScope &scope, const ScenePlug::ScenePath &path )
 {
 	IECorePython::ScopedGILRelease gilRelease;
@@ -77,8 +82,11 @@ bool hasTransformEditWrapper( const Gaffer::EditScope &scope, const ScenePlug::S
 
 object acquireTransformEditWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, bool createIfNecessary )
 {
-	IECorePython::ScopedGILRelease gilRelease;
-	auto p = EditScopeAlgo::acquireTransformEdit( &scope, path, createIfNecessary );
+	std::optional<EditScopeAlgo::TransformEdit> p;
+	{
+		IECorePython::ScopedGILRelease gilRelease;
+		p = EditScopeAlgo::acquireTransformEdit( &scope, path, createIfNecessary );
+	}
 	return p ? object( *p ) : object();
 }
 
@@ -86,6 +94,11 @@ void removeTransformEditWrapper( Gaffer::EditScope &scope, const ScenePlug::Scen
 {
 	IECorePython::ScopedGILRelease gilRelease;
 	EditScopeAlgo::removeTransformEdit( &scope, path );
+}
+
+GraphComponentPtr transformEditReadOnlyReasonWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &path )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::transformEditReadOnlyReason( &scope, path ) );
 }
 
 V3fPlugPtr translateAccessor( EditScopeAlgo::TransformEdit &e )
@@ -114,6 +127,10 @@ Imath::M44f matrixWrapper( EditScopeAlgo::TransformEdit &e )
 	return e.matrix();
 }
 
+
+// Shaders
+// =======
+
 bool hasParameterEditWrapper( const Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, const std::string &attribute, const IECoreScene::ShaderNetwork::Parameter &parameter )
 {
 	return EditScopeAlgo::hasParameterEdit( &scope, path, attribute, parameter );
@@ -131,6 +148,121 @@ void removeParameterEditWrapper( Gaffer::EditScope &scope, const ScenePlug::Scen
 	return EditScopeAlgo::removeParameterEdit( &scope, path, attribute, parameter );
 }
 
+GraphComponentPtr parameterEditReadOnlyReasonWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, const std::string &attribute, const IECoreScene::ShaderNetwork::Parameter &parameter )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::parameterEditReadOnlyReason( &scope, path, attribute, parameter ) );
+}
+
+
+// Attributes
+// ==========
+
+bool hasAttributeEditWrapper( const Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, const std::string &attribute )
+{
+	return EditScopeAlgo::hasAttributeEdit( &scope, path, attribute );
+}
+
+TweakPlugPtr acquireAttributeEditWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, const std::string &attribute, bool createIfNecessary )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::acquireAttributeEdit( &scope, path, attribute, createIfNecessary );
+}
+
+void removeAttributeEditWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, const std::string &attribute )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::removeAttributeEdit( &scope, path, attribute );
+}
+
+GraphComponentPtr attributeEditReadOnlyReasonWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, const std::string &attribute )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::attributeEditReadOnlyReason( &scope, path, attribute ) );
+}
+
+// Set Membership
+// ==============
+
+ValuePlugPtr acquireSetEditsWrapper( Gaffer::EditScope &scope, const std::string &set, bool createIfNecessary )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::acquireSetEdits( &scope, set, createIfNecessary );
+}
+
+void setSetMembershipWrapper( Gaffer::EditScope &scope, const IECore::PathMatcher &paths, const std::string &set, EditScopeAlgo::SetMembership state )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	EditScopeAlgo::setSetMembership( &scope, paths, set, state );
+}
+
+EditScopeAlgo::SetMembership getSetMembershipWrapper( Gaffer::EditScope &scope, const ScenePlug::ScenePath &path, const std::string &set )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::getSetMembership( &scope, path, set );
+}
+
+GraphComponentPtr setMembershipReadOnlyReasonWrapper( Gaffer::EditScope &scope, const std::string &set, EditScopeAlgo::SetMembership state )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::setMembershipReadOnlyReason( &scope, set, state ) );
+}
+
+// Options
+// =======
+
+bool hasOptionEditWrapper( const Gaffer::EditScope &scope, const std::string &option )
+{
+	return EditScopeAlgo::hasOptionEdit( &scope, option );
+}
+
+TweakPlugPtr acquireOptionEditWrapper( Gaffer::EditScope &scope, const std::string &option, bool createIfNecessary )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::acquireOptionEdit( &scope, option, createIfNecessary );
+}
+
+void removeOptionEditWrapper( Gaffer::EditScope &scope, const std::string &option )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::removeOptionEdit( &scope, option );
+}
+
+GraphComponentPtr optionEditReadOnlyReasonWrapper( Gaffer::EditScope &scope, const std::string &option )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::optionEditReadOnlyReason( &scope, option ) );
+}
+
+// Render Pass Option Edits
+// ========================
+
+bool hasRenderPassOptionEditWrapper( const Gaffer::EditScope &scope, const std::string &renderPass, const std::string &option )
+{
+	return EditScopeAlgo::hasRenderPassOptionEdit( &scope, renderPass, option );
+}
+
+TweakPlugPtr acquireRenderPassOptionEditWrapper( Gaffer::EditScope &scope, const std::string &renderPass, const std::string &option, bool createIfNecessary )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::acquireRenderPassOptionEdit( &scope, renderPass, option, createIfNecessary );
+}
+
+void removeRenderPassOptionEditWrapper( Gaffer::EditScope &scope, const std::string &renderPass, const std::string &option )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return EditScopeAlgo::removeRenderPassOptionEdit( &scope, renderPass, option );
+}
+
+GraphComponentPtr renderPassOptionEditReadOnlyReasonWrapper( Gaffer::EditScope &scope, const std::string &renderPass, const std::string &option )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::renderPassOptionEditReadOnlyReason( &scope, renderPass, option ) );
+}
+
+// Render Passes
+// =============
+
+GraphComponentPtr renderPassesReadOnlyReasonWrapper( Gaffer::EditScope &scope )
+{
+	return const_cast<GraphComponent *>( EditScopeAlgo::renderPassesReadOnlyReason( &scope ) );
+}
+
 } // namespace
 
 namespace GafferSceneModule
@@ -145,6 +277,7 @@ void bindEditScopeAlgo()
 	def( "setPruned", &setPrunedWrapper1 );
 	def( "setPruned", &setPrunedWrapper2 );
 	def( "getPruned", &getPrunedWrapper );
+	def( "prunedReadOnlyReason", &prunedReadOnlyReasonWrapper );
 
 	class_<EditScopeAlgo::TransformEdit>( "TransformEdit", no_init )
 		.def( init<const V3fPlugPtr &, const V3fPlugPtr &, const V3fPlugPtr &, const V3fPlugPtr &>() )
@@ -160,10 +293,39 @@ void bindEditScopeAlgo()
 	def( "acquireTransformEdit", &acquireTransformEditWrapper, ( arg( "scope" ), arg( "path" ), arg( "createIfNecessary" ) = true ) );
 	def( "hasTransformEdit", &hasTransformEditWrapper );
 	def( "removeTransformEdit", &removeTransformEditWrapper );
+	def( "transformEditReadOnlyReason", &transformEditReadOnlyReasonWrapper );
 
 	def( "acquireParameterEdit", &acquireParameterEditWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ), arg( "parameter" ), arg( "createIfNecessary" ) = true ) );
 	def( "hasParameterEdit", &hasParameterEditWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ), arg( "parameter" ) ) );
 	def( "removeParameterEdit", &removeParameterEditWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ), arg( "parameter" ) ) );
+	def( "parameterEditReadOnlyReason", &parameterEditReadOnlyReasonWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ), arg( "parameter" ) ) );
+
+	def( "acquireAttributeEdit", &acquireAttributeEditWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ), arg( "createIfNecessary" ) = true ) );
+	def( "hasAttributeEdit", &hasAttributeEditWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ) ) );
+	def( "removeAttributeEdit", &removeAttributeEditWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ) ) );
+	def( "attributeEditReadOnlyReason", &attributeEditReadOnlyReasonWrapper, ( arg( "scope" ), arg( "path" ), arg( "attribute" ) ) );
+
+	def( "acquireSetEdits", &acquireSetEditsWrapper, ( arg( "scope" ), arg( "set" ), arg( "createIfNecessary" ) = true ) );
+	def( "setSetMembership", &setSetMembershipWrapper );
+	def( "getSetMembership", &getSetMembershipWrapper );
+	def( "setMembershipReadOnlyReason", &setMembershipReadOnlyReasonWrapper );
+	enum_<EditScopeAlgo::SetMembership>( "SetMembership" )
+		.value( "Added", EditScopeAlgo::SetMembership::Added )
+		.value( "Removed", EditScopeAlgo::SetMembership::Removed )
+		.value( "Unchanged", EditScopeAlgo::SetMembership::Unchanged )
+	;
+
+	def( "acquireOptionEdit", &acquireOptionEditWrapper, ( arg( "scope" ), arg( "option" ), arg( "createIfNecessary" ) = true ) );
+	def( "hasOptionEdit", &hasOptionEditWrapper, ( arg( "scope" ), arg( "option" ) ) );
+	def( "removeOptionEdit", &removeOptionEditWrapper, ( arg( "scope" ), arg( "option" ) ) );
+	def( "optionEditReadOnlyReason", &optionEditReadOnlyReasonWrapper, ( arg( "scope" ), arg( "option" ) ) );
+
+	def( "acquireRenderPassOptionEdit", &acquireRenderPassOptionEditWrapper, ( arg( "scope" ), arg( "renderPass" ), arg( "option" ), arg( "createIfNecessary" ) = true ) );
+	def( "hasRenderPassOptionEdit", &hasRenderPassOptionEditWrapper, ( arg( "scope" ), arg( "renderPass" ), arg( "option" ) ) );
+	def( "removeRenderPassOptionEdit", &removeRenderPassOptionEditWrapper, ( arg( "scope" ), arg( "renderPass" ), arg( "option" ) ) );
+	def( "renderPassOptionEditReadOnlyReason", &renderPassOptionEditReadOnlyReasonWrapper, ( arg( "scope" ), arg( "renderPass" ), arg( "option" ) ) );
+
+	def( "renderPassesReadOnlyReason", &renderPassesReadOnlyReasonWrapper );
 
 }
 

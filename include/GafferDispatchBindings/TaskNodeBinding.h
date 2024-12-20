@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERDISPATCHBINDINGS_TASKNODEBINDING_H
-#define GAFFERDISPATCHBINDINGS_TASKNODEBINDING_H
+#pragma once
 
 #include "GafferDispatch/TaskNode.h"
 
@@ -73,7 +72,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 
 		bool affectsTask( const Gaffer::Plug *input ) const override
 		{
-			if( this->isSubclassed() )
+			if( this->isSubclassed() && this->initialised() )
 			{
 				IECorePython::ScopedGILLock gilLock;
 				try
@@ -86,7 +85,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 						);
 					}
 				}
-				catch( const boost::python::error_already_set &e )
+				catch( const boost::python::error_already_set & )
 				{
 					IECorePython::ExceptionAlgo::translatePythonException();
 				}
@@ -111,7 +110,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 						return;
 					}
 				}
-				catch( const boost::python::error_already_set &e )
+				catch( const boost::python::error_already_set & )
 				{
 					IECorePython::ExceptionAlgo::translatePythonException();
 				}
@@ -136,7 +135,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 						return;
 					}
 				}
-				catch( const boost::python::error_already_set &e )
+				catch( const boost::python::error_already_set & )
 				{
 					IECorePython::ExceptionAlgo::translatePythonException();
 				}
@@ -159,7 +158,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 						);
 					}
 				}
-				catch( const boost::python::error_already_set &e )
+				catch( const boost::python::error_already_set & )
 				{
 					IECorePython::ExceptionAlgo::translatePythonException();
 				}
@@ -181,7 +180,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 						return;
 					}
 				}
-				catch( const boost::python::error_already_set &e )
+				catch( const boost::python::error_already_set & )
 				{
 					IECorePython::ExceptionAlgo::translatePythonException();
 				}
@@ -208,7 +207,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 						return;
 					}
 				}
-				catch( const boost::python::error_already_set &e )
+				catch( const boost::python::error_already_set & )
 				{
 					IECorePython::ExceptionAlgo::translatePythonException();
 				}
@@ -229,7 +228,7 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 						return reqSecExec();
 					}
 				}
-				catch( const boost::python::error_already_set &e )
+				catch( const boost::python::error_already_set & )
 				{
 					IECorePython::ExceptionAlgo::translatePythonException();
 				}
@@ -242,5 +241,3 @@ class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType
 } // namespace GafferDispatchBindings
 
 #include "GafferDispatchBindings/TaskNodeBinding.inl"
-
-#endif // GAFFERDISPATCHBINDINGS_TASKNODEBINDING_H

@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_COLLECTPRIMITIVEVARIABLES_H
-#define GAFFERSCENE_COLLECTPRIMITIVEVARIABLES_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -54,10 +53,10 @@ class GAFFERSCENE_API CollectPrimitiveVariables : public ObjectProcessor
 
 	public :
 
-		CollectPrimitiveVariables( const std::string &name=defaultName<CollectPrimitiveVariables>() );
+		explicit CollectPrimitiveVariables( const std::string &name=defaultName<CollectPrimitiveVariables>() );
 		~CollectPrimitiveVariables() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CollectPrimitiveVariables, CollectPrimitiveVariablesTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::CollectPrimitiveVariables, CollectPrimitiveVariablesTypeId, ObjectProcessor );
 
 		Gaffer::StringPlug *primitiveVariablesPlug();
 		const Gaffer::StringPlug *primitiveVariablesPlug() const;
@@ -87,5 +86,3 @@ class GAFFERSCENE_API CollectPrimitiveVariables : public ObjectProcessor
 IE_CORE_DECLAREPTR( CollectPrimitiveVariables )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_COLLECTPRIMITIVEVARIABLES_H

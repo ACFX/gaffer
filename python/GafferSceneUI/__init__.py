@@ -41,15 +41,21 @@ __import__( "GafferScene" )
 
 from ._GafferSceneUI import *
 
+from .SceneEditor import SceneEditor
 from .HierarchyView import HierarchyView
 from .SceneInspector import SceneInspector
 from .PrimitiveInspector import PrimitiveInspector
 from .UVInspector import UVInspector
 from .FilterPlugValueWidget import FilterPlugValueWidget
 from .ScenePathPlugValueWidget import ScenePathPlugValueWidget
-from .TweakPlugValueWidget import TweakPlugValueWidget
+from .SetExpressionPlugValueWidget import SetExpressionPlugValueWidget
+from .LightEditor import LightEditor
+from .SetEditor import SetEditor
+from .RenderPassEditor import RenderPassEditor
+from .AttributeEditor import AttributeEditor
 from . import SceneHistoryUI
 from . import EditScopeUI
+from . import _InspectorColumn
 
 from . import SceneNodeUI
 from . import SceneReaderUI
@@ -61,6 +67,7 @@ from . import OutputsUI
 from . import OptionsUI
 from . import OpenGLAttributesUI
 from . import SceneWriterUI
+from . import RenderUI
 from . import StandardOptionsUI
 from . import StandardAttributesUI
 from . import ShaderUI
@@ -102,11 +109,10 @@ from . import TextUI
 from . import AimConstraintUI
 from . import CoordinateSystemUI
 from . import DeleteAttributesUI
-from . import SeedsUI
+from . import ScatterUI
 from . import UnionFilterUI
 from . import PathFilterUI
 from . import GroupUI
-from . import OpenGLRenderUI
 from . import PrimitiveVariableProcessorUI
 from . import DeletePrimitiveVariablesUI
 from . import MeshTypeUI
@@ -123,9 +129,9 @@ from . import CubeUI
 from . import AttributeVisualiserUI
 from . import FilterProcessorUI
 from . import MeshToPointsUI
-from . import RenderUI
 from . import ShaderBallUI
 from . import ShaderTweaksUI
+from . import ShaderTweakProxyUI
 from . import CameraTweaksUI
 from . import LightToCameraUI
 from . import FilterResultsUI
@@ -163,6 +169,41 @@ from . import LocaliseAttributesUI
 from . import PrimitiveSamplerUI
 from . import ClosestPointSamplerUI
 from . import CurveSamplerUI
+from . import UnencapsulateUI
+from . import MotionPathUI
+from . import FilterQueryUI
+from . import TransformQueryUI
+from . import BoundQueryUI
+from . import ExistenceQueryUI
+from . import AttributeQueryUI
+from . import UVSamplerUI
+from . import CryptomatteUI
+from . import ShaderQueryUI
+from . import AttributeTweaksUI
+from . import OptionTweaksUI
+from . import OptionQueryUI
+from . import RenameUI
+from . import PrimitiveVariableQueryUI
+from . import SetQueryUI
+from . import MeshSegmentsUI
+from . import ImageToPointsUI
+from . import MeshSplitUI
+from . import FramingConstraintUI
+from . import MeshNormalsUI
+from . import LightToolUI
+from . import ImageScatterUI
+from . import RenderPassesUI
+from . import DeleteRenderPassesUI
+from . import RenderPassWedgeUI
+from . import LightPositionToolUI
+from . import MeshTessellateUI
+from . import RenderPassTypeAdaptorUI
+from . import RenderPassShaderUI
+from . import MergeObjectsUI
+from . import MergeMeshesUI
+from . import MergePointsUI
+from . import MergeCurvesUI
+from . import VisualiserToolUI
 
 # then all the PathPreviewWidgets. note that the order
 # of import controls the order of display.

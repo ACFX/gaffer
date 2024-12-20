@@ -40,11 +40,12 @@ import sys
 import weakref
 import gc
 import os
+import pathlib
 import shutil
 import stat
 import inspect
 import functools
-import six
+import imath
 
 import IECore
 
@@ -92,6 +93,56 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s.removeChild( n )
 
 		self.assertNotIn( n, s.selection() )
+
+	def testFocus( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cs = GafferTest.CapturingSlot( s.focusChangedSignal() )
+
+		f = s.focusSet()
+		self.assertIsInstance( f, Gaffer.Set )
+		self.assertEqual( f.size(), 0 )
+
+		s["n1"] = Gaffer.Node()
+		s["n2"] = Gaffer.Node()
+		n3 = Gaffer.Node()
+
+		s.setFocus( s["n1"] )
+		self.assertEqual( s.getFocus(), s["n1"] )
+		self.assertEqual( set( f ), { s["n1"] } )
+
+		self.assertEqual( len( cs ), 1 )
+		self.assertTrue( cs[0][0].isSame( s ) )
+		self.assertTrue( cs[0][1].isSame( s["n1"] ) )
+
+		s.setFocus( s["n2"] )
+		self.assertEqual( s.getFocus(), s["n2"] )
+		self.assertEqual( set( f ), { s["n2"] } )
+
+		self.assertEqual( len( cs ), 2 )
+		self.assertTrue( cs[1][0].isSame( s ) )
+		self.assertTrue( cs[1][1].isSame( s["n2"] ) )
+
+		with self.assertRaisesRegex( Exception, "Node is not a child of this script" ) :
+			s.setFocus( n3 )
+		self.assertEqual( set( f ), { s["n2"] } )
+
+		self.assertEqual( len( cs ), 2 )
+
+		with self.assertRaisesRegex( Exception, "Python argument types in.*" ) :
+			s.setFocus( Gaffer.Plug() )
+		self.assertEqual( set( f ), { s["n2"] } )
+
+		self.assertEqual( len( cs ), 2 )
+
+		s.setFocus( None )
+		self.assertEqual( s.getFocus(), None )
+		self.assertEqual( set( f ), set() )
+
+		self.assertEqual( len( cs ), 3 )
+		self.assertTrue( cs[2][0].isSame( s ) )
+		self.assertEqual( cs[2][1], None )
 
 	def testSerialisation( self ) :
 
@@ -159,11 +210,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["a2"]["op1"].setInput( s["a1"]["sum"] )
 		s["a2"]["op2"].setValue( 10 )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertTrue( s2["a2"]["op1"].getInput().isSame( s2["a1"]["sum"] ) )
@@ -173,7 +224,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["a1"] = GafferTest.AddNode()
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s.load()
@@ -274,7 +325,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		n = Gaffer.ScriptNode()
 
 		n.execute( "a = 10" )
-		six.assertRaisesRegex( self, Exception, "NameError: name 'a' is not defined", n.execute, "a * 10" )
+		self.assertRaisesRegex( Exception, "NameError: name 'a' is not defined", n.execute, "a * 10" )
 
 	def testClassScope( self ) :
 
@@ -354,11 +405,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( s["frameRange"]["start"].getValue(), 110 )
 		self.assertEqual( s["frameRange"]["end"].getValue(), 200 )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertEqual( s2["frameRange"]["start"].getValue(), 110 )
@@ -559,11 +610,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["customSetting"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		s["customSetting"].setValue( 100 )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertEqual( s2["customSetting"].getValue(), 100 )
@@ -764,16 +815,16 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["n"] = Gaffer.Node()
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
-		shutil.move( self.temporaryDirectory() + "/test.gfr", self.temporaryDirectory() + "/test2.gfr" )
+		shutil.move( self.temporaryDirectory() / "test.gfr", self.temporaryDirectory() / "test2.gfr" )
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( self.temporaryDirectory() + "/test2.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test2.gfr" )
 		s.load()
 
-		self.assertEqual( s["fileName"].getValue(), self.temporaryDirectory() + "/test2.gfr" )
+		self.assertEqual( s["fileName"].getValue(), ( self.temporaryDirectory() / "test2.gfr" ).as_posix() )
 
 	def testUnsavedChanges( self ) :
 
@@ -791,7 +842,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 			s["node"] = GafferTest.AddNode()
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 
@@ -846,20 +897,20 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["n2"] = GafferTest.AddNode()
 		s["n2"]["op1"].setInput( s["n1"]["sum"] )
 
-		s.serialiseToFile( self.temporaryDirectory() + "/test.gfr" )
+		s.serialiseToFile( self.temporaryDirectory() / "test.gfr" )
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertTrue( "n1" in s2 )
 		self.assertTrue( "n2" in s2 )
 		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["n1"]["sum"] ) )
 
-		s.serialiseToFile( self.temporaryDirectory() + "/test.gfr", filter = Gaffer.StandardSet( [ s["n2"] ] ) )
+		s.serialiseToFile( self.temporaryDirectory() / "test.gfr", filter = Gaffer.StandardSet( [ s["n2"] ] ) )
 
 		s3 = Gaffer.ScriptNode()
-		s3["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s3["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s3.load()
 
 		self.assertTrue( "n1" not in s3 )
@@ -873,13 +924,13 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["n2"] = GafferTest.AddNode()
 		s["n2"]["op1"].setInput( s["n1"]["sum"] )
 
-		s.serialiseToFile( self.temporaryDirectory() + "/test.gfr" )
+		s.serialiseToFile( self.temporaryDirectory() / "test.gfr" )
 
 		s2 = Gaffer.ScriptNode()
 
 		self.assertRaises( RuntimeError, s2.executeFile, "thisFileDoesntExist.gfr" )
 
-		s2.executeFile( self.temporaryDirectory() + "/test.gfr" )
+		s2.executeFile( self.temporaryDirectory() / "test.gfr" )
 
 		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["n1"]["sum"] ) )
 
@@ -893,7 +944,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		def f( plug ) :
 			values.append( plug.getValue() )
 
-		c = s["n"].plugSetSignal().connect( f )
+		s["n"].plugSetSignal().connect( f )
 
 		with Gaffer.UndoScope( s ) :
 			s["n"]["p"].setValue( 10 )
@@ -946,11 +997,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		p["value"].setValue( 20 )
 		self.assertEqual( s.context().get( "test" ), 20 )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertEqual( s2["variables"][p.getName()]["value"].getValue(), 20 )
@@ -961,7 +1012,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		self.assertEqual( s.context().get( "script:name" ), "" )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		self.assertEqual( s.context().get( "script:name" ), "test" )
 
 	def testReloadWithCustomVariables( self ) :
@@ -969,7 +1020,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["variables"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s["variables"][0]["value"].setValue( 100 )
@@ -986,11 +1037,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["variables"].addChild( p )
 		self.assertEqual( s.context().get( "test" ), 10 )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertEqual( s2["variables"][p.getName()]["value"].getValue(), 10 )
@@ -1010,7 +1061,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 				self.assertFalse( s.undoAvailable() )
 				self.assertFalse( s.redoAvailable() )
 
-		c = s["n"].plugSetSignal().connect( f )
+		s["n"].plugSetSignal().connect( f )
 
 		self.assertEqual( s.currentActionStage(), Gaffer.Action.Stage.Invalid )
 		self.assertEqual( len( actionStages ), 0 )
@@ -1095,7 +1146,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["n"] = GafferTest.AddNode()
 
 		with IECore.CapturingMessageHandler() as c :
-			s.execute( 'parent["n"]["op1"].setValue( 101 )\niWillFail(); parent["n"]["op2"].setValue( 102 )', continueOnError=True )
+			s.execute( 'parent["n"]["op1"].setValue( 101 )\niWillFail()\nparent["n"]["op2"].setValue( 102 )', continueOnError=True )
 
 		self.assertEqual( s["n"]["op1"].getValue(), 101 )
 		self.assertEqual( s["n"]["op2"].getValue(), 102 )
@@ -1118,7 +1169,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testExecuteExceptionsIncludeLineNumber( self ) :
 
 		s = Gaffer.ScriptNode()
-		six.assertRaisesRegex( self, RuntimeError, "Line 2 .* name 'iDontExist' is not defined", s.execute, "a = 10\na=iDontExist" )
+		self.assertRaisesRegex( RuntimeError, "Line 2 .* name 'iDontExist' is not defined", s.execute, "a = 10\na=iDontExist" )
 
 	def testFileVersioning( self ) :
 
@@ -1129,7 +1180,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:minorVersion" ), None )
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:patchVersion" ), None )
 
-		s.serialiseToFile( self.temporaryDirectory() + "/test.gfr" )
+		s.serialiseToFile( self.temporaryDirectory() / "test.gfr" )
 
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:milestoneVersion" ), None )
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:majorVersion" ), None )
@@ -1137,7 +1188,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:patchVersion" ), None )
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertEqual( Gaffer.Metadata.value( s2, "serialiser:milestoneVersion" ), Gaffer.About.milestoneVersion() )
@@ -1145,7 +1196,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( Gaffer.Metadata.value( s2, "serialiser:minorVersion" ), Gaffer.About.minorVersion() )
 		self.assertEqual( Gaffer.Metadata.value( s2, "serialiser:patchVersion" ), Gaffer.About.patchVersion() )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s2.load()
@@ -1158,7 +1209,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testFileVersioningUpdatesOnSave( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/previousSerialisationVersion.gfr" )
+		s["fileName"].setValue( pathlib.Path( __file__ ).parent /  "scripts" / "previousSerialisationVersion.gfr" )
 		s.load()
 
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:milestoneVersion" ), 0 )
@@ -1166,11 +1217,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:minorVersion" ), 0 )
 		self.assertEqual( Gaffer.Metadata.value( s, "serialiser:patchVersion" ), 0 )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s.save()
 
 		s2 = Gaffer.ScriptNode()
-		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s2["fileName"].setValue( self.temporaryDirectory() / "test.gfr" )
 		s2.load()
 
 		self.assertEqual( Gaffer.Metadata.value( s2, "serialiser:milestoneVersion" ), Gaffer.About.milestoneVersion() )
@@ -1240,7 +1291,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testLineNumberForExecutionSyntaxError( self ) :
 
 		s = Gaffer.ScriptNode()
-		six.assertRaisesRegex( self,
+		self.assertRaisesRegex(
 			IECore.Exception,
 			"^Line 2",
 			s.execute,
@@ -1255,8 +1306,8 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 	def testFileNameInExecutionError( self ) :
 
-		fileName = self.temporaryDirectory() + "/test.gfr"
-		with open( fileName, "w" ) as f :
+		fileName = self.temporaryDirectory() / "test.gfr"
+		with open( fileName, "w", encoding = "utf-8" ) as f :
 			f.write( "a = 10\n" )
 			f.write( "a = iDontExist\n" )
 
@@ -1265,18 +1316,20 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		for method in ( s.load, functools.partial( s.executeFile, fileName ) ) :
 
-			six.assertRaisesRegex( self,
-				RuntimeError,
-				"Line 2 of " + fileName + " : NameError: name 'iDontExist' is not defined",
-				method
-			)
+			with self.subTest( fileName = fileName, method = method ) :
 
-			with IECore.CapturingMessageHandler() as mh :
-				method( continueOnError = True )
+				self.assertRaisesRegex(
+					RuntimeError,
+					"Line 2 of {} : NameError: name 'iDontExist' is not defined".format( fileName.as_posix() ),
+					method
+				)
 
-			self.assertEqual( len( mh.messages ), 1 )
-			self.assertEqual( mh.messages[0].context, "Line 2 of " + fileName )
-			self.assertTrue( "NameError: name 'iDontExist' is not defined" in mh.messages[0].message )
+				with IECore.CapturingMessageHandler() as mh :
+					method( continueOnError = True )
+
+				self.assertEqual( len( mh.messages ), 1 )
+				self.assertEqual( mh.messages[0].context, "Line 2 of {}".format( fileName.as_posix() ) )
+				self.assertTrue( "NameError: name 'iDontExist' is not defined" in mh.messages[0].message )
 
 	def testIsExecuting( self ) :
 
@@ -1288,7 +1341,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		def f( script, child ) :
 			self.__wasExecuting.append( script.isExecuting() )
 
-		c = s.childAddedSignal().connect( f )
+		s.childAddedSignal().connect( f )
 
 		s["n"] = GafferTest.AddNode()
 
@@ -1299,10 +1352,10 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n1"] ] ) )
 		Gaffer.PlugAlgo.promote( b["n1"]["op1"] )
 
-		b.exportForReference( self.temporaryDirectory() + "/test.grf" )
+		b.exportForReference( self.temporaryDirectory() / "test.grf" )
 
 		s["r"] = Gaffer.Reference()
-		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+		s["r"].load( self.temporaryDirectory() / "test.grf" )
 
 		s["r"]["op1"].setInput( s["n"]["sum"] )
 
@@ -1389,7 +1442,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 			)
 		) )
 
-		six.assertRaisesRegex( self, RuntimeError, "iAmAnError", script.paste )
+		self.assertRaisesRegex( RuntimeError, "iAmAnError", script.paste )
 		self.assertEqual( len( script.children( Gaffer.Node ) ), 0 )
 
 		with IECore.CapturingMessageHandler() as mh :
@@ -1423,7 +1476,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s1["frameRange"]["end"].setValue( 101 )
 		s1["variables"].addChild( Gaffer.NameValuePlug( "test", "test" ) )
 
-		fileName = self.temporaryDirectory() + "/toImport.gfr"
+		fileName = self.temporaryDirectory() / "toImport.gfr"
 		s1.serialiseToFile( fileName )
 
 		s2 = Gaffer.ScriptNode()
@@ -1438,7 +1491,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 	def testReadOnlyMetadata( self ) :
 
-		fileName = self.temporaryDirectory() + "/test.gfr"
+		fileName = self.temporaryDirectory() / "test.gfr"
 
 		s = Gaffer.ScriptNode()
 		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
@@ -1460,8 +1513,329 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s.load()
 		self.assertTrue( Gaffer.MetadataAlgo.getReadOnly( s ) )
 
-		s["fileName"].setValue( self.temporaryDirectory() + "/test2.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() / "test2.gfr" )
 		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+	def testDisableContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "test", 10, defaultEnabled = True, name = "test", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["test"], 10 )
+
+		p["enabled"].setValue( False )
+		self.assertNotIn( "test", s.context() )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertNotIn( "test", s2.context() )
+		s2["variables"]["test"]["enabled"].setValue( True )
+		self.assertEqual( s2.context()["test"], 10 )
+
+	def testDeleteContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "test", 10, defaultEnabled = True, name = "test", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["test"], 10 )
+
+		s["variables"].removeChild( p )
+		self.assertNotIn( "test", s.context() )
+
+	def testCompoundNumericContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "test", imath.V3i( 1, 2, 3 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["test"], imath.V3i( 1, 2, 3 ) )
+
+		p["value"]["y"].setValue( 10 )
+		self.assertEqual( s.context()["test"], imath.V3i( 1, 10, 3 ) )
+
+	def testDuplicateContextVariables( self ) :
+
+		# We don't want people to specify the same context variable twice,
+		# but if they do, we want to implement a simple rule : last enabled
+		# one in the list wins. This is the same rule used for CompoundDataPlugs
+		# everywhere.
+
+		s = Gaffer.ScriptNode()
+
+		p1 = Gaffer.NameValuePlug( "test", 1, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		p2 = Gaffer.NameValuePlug( "test", 2, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p1 )
+		s["variables"].addChild( p2 )
+		self.assertEqual( s.context()["test"], 2 )
+
+		p1["value"].setValue( 10 )
+		self.assertEqual( s.context()["test"], 2 )
+
+		p2["enabled"].setValue( False )
+		self.assertEqual( s.context()["test"], 10 )
+
+		p2["enabled"].setValue( True )
+		self.assertEqual( s.context()["test"], 2 )
+
+		s["variables"].removeChild( p2 )
+		self.assertEqual( s.context()["test"], 10 )
+
+		s["variables"].removeChild( p1 )
+		self.assertNotIn( "test", s.context() )
+
+	def testExternalContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		# We don't really want people to manipulate the context directly like
+		# this; we want them to use `ScriptNode::variablesPlug()` instead. But
+		# it seems plausible that people would do this to implement a sort of
+		# non-persistent "context pinning" for interactive use. Until we support
+		# such a feature natively, make sure that we don't remove variables we
+		# know nothing about.
+		s.context()["externalTest"] = 10
+
+		p = Gaffer.NameValuePlug( "test", 1, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertEqual( s.context()["test"], 1 )
+
+		p["enabled"].setValue( False )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertNotIn( "test", s.context() )
+
+		p["enabled"].setValue( True )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertEqual( s.context()["test"], 1 )
+
+		s["variables"].removeChild( p )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertNotIn( "test", s.context() )
+
+	def testChangeContextVariableName( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "", 1, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertNotIn( "", s.context() )
+
+		p["name"].setValue( "test" )
+		self.assertEqual( s.context()["test"], 1 )
+
+		p["name"].setValue( "testTwo" )
+		self.assertEqual( s.context()["testTwo"], 1 )
+		self.assertNotIn( "test", s.context() )
+
+		p["name"].setValue( "" )
+		self.assertNotIn( "testTwo", s.context() )
+
+	def testCancellationDuringLoad( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( pathlib.Path( __file__ ).parent / "scripts" / "previousSerialisationVersion.gfr" )
+
+		context = Gaffer.Context()
+		canceller = IECore.Canceller()
+		with Gaffer.Context( context, canceller ) :
+			canceller.cancel()
+			with self.assertRaises( IECore.Cancelled ) :
+				s.load()
+
+	def testCancellationDuringExecute( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		context = Gaffer.Context()
+		canceller = IECore.Canceller()
+		with Gaffer.Context( context, canceller ) :
+			canceller.cancel()
+			# Execution is done all in one go, and there's no point cancelling
+			# at the end when we've done all of the work anyway.
+			s.execute( "script.addChild( Gaffer.Node() )", continueOnError = False )
+			with self.assertRaises( IECore.Cancelled ) :
+				# Execution is done line-by-line, so making regular cancellation
+				# checks makes sense.
+				s.execute( "script.addChild( Gaffer.Node() )", continueOnError = True )
+
+	def testCancellationDuringSerialise( self ) :
+
+		s = Gaffer.ScriptNode()
+		context = Gaffer.Context()
+		canceller = IECore.Canceller()
+		with Gaffer.Context( context, canceller ) :
+			canceller.cancel()
+			with self.assertRaises( IECore.Cancelled ) :
+				s.serialise()
+
+	def testFrameChangeSignalling( self ) :
+
+		s = Gaffer.ScriptNode()
+		cs = GafferTest.CapturingSlot( s.context().changedSignal() )
+
+		s.context().setFrame( 10 )
+		self.assertEqual( cs, [ ( s.context(), "frame" ) ] )
+		self.assertEqual( s.context().getFrame(), 10 )
+
+		s.context().setFrame( 20 )
+		self.assertEqual( cs, [ ( s.context(), "frame" ) ] * 2 )
+		self.assertEqual( s.context().getFrame(), 20 )
+
+		s.context().setFrame( 30 )
+		self.assertEqual( cs, [ ( s.context(), "frame" ) ] * 3 )
+		self.assertEqual( s.context().getFrame(), 30 )
+
+		s.context().setFrame( 30 )
+		self.assertEqual( cs, [ ( s.context(), "frame" ) ] * 3 )
+		self.assertEqual( s.context().getFrame(), 30 )
+
+		s["frame"].setValue( 40 )
+		self.assertEqual( cs, [ ( s.context(), "frame" ) ] * 4 )
+		self.assertEqual( s.context().getFrame(), 40 )
+
+		s["frame"].setValue( 50 )
+		self.assertEqual( cs, [ ( s.context(), "frame" ) ] * 5 )
+		self.assertEqual( s.context().getFrame(), 50 )
+
+		s["frame"].setValue( 50 )
+		self.assertEqual( cs, [ ( s.context(), "frame" ) ] * 5 )
+		self.assertEqual( s.context().getFrame(), 50 )
+
+	def testDeletingNodeRemovesFocus( self ) :
+
+		s = Gaffer.ScriptNode()
+		n = Gaffer.Node()
+		s["n"] = n
+
+		# Set focus, and check all expected signals are emitted.
+
+		focusChanges = GafferTest.CapturingSlot( s.focusChangedSignal() )
+		memberRemovals = GafferTest.CapturingSlot( s.focusSet().memberRemovedSignal() )
+		memberAdditions = GafferTest.CapturingSlot( s.focusSet().memberAddedSignal() )
+
+		s.setFocus( n )
+		self.assertEqual( s.getFocus(), n )
+
+		self.assertEqual( focusChanges, [ ( s, n ) ] )
+		self.assertEqual( memberRemovals, [] )
+		self.assertEqual( memberAdditions, [ ( s.focusSet(), n ) ] )
+
+		# Delete focus node, and check focus is lost and all expected signals
+		# are emitted.
+
+		del focusChanges[:]
+		del memberRemovals[:]
+		del memberAdditions[:]
+
+		del s["n"]
+		self.assertIsNone( s.getFocus() )
+
+		self.assertEqual( focusChanges, [ ( s, None ) ] )
+		self.assertEqual( memberRemovals, [ ( s.focusSet(), n ) ] )
+		self.assertEqual( memberAdditions, [] )
+
+		del focusChanges[:]
+		del memberRemovals[:]
+		del memberAdditions[:]
+
+		# Repeat, but this time with focus node inside a box.
+
+		s["b"] = Gaffer.Box()
+		s["b"]["n"] = n
+
+		s.setFocus( n )
+		self.assertEqual( s.getFocus(), n )
+
+		self.assertEqual( focusChanges, [ ( s, n ) ] )
+		self.assertEqual( memberRemovals, [] )
+		self.assertEqual( memberAdditions, [ ( s.focusSet(), n ) ] )
+
+		del focusChanges[:]
+		del memberRemovals[:]
+		del memberAdditions[:]
+
+		del s["b"]["n"]
+		self.assertIsNone( s.getFocus() )
+
+		self.assertEqual( focusChanges, [ ( s, None ) ] )
+		self.assertEqual( memberRemovals, [ ( s.focusSet(), n ) ] )
+		self.assertEqual( memberAdditions, [] )
+
+	def testExecuteWithConditionals( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script.execute(
+			inspect.cleandoc(
+				"""
+				if True :
+					script.addChild( Gaffer.Node( "True1" ) )
+				script.addChild( Gaffer.Node( "Unconditional1" ) )
+
+				if False :
+					script.addChild( Gaffer.Node( "False" ) )
+
+				if True :
+					script.addChild( Gaffer.Node( "True2" ) )
+					script.addChild( Gaffer.Node( "True3" ) )
+				script.addChild( Gaffer.Node( "Unconditional2" ) )
+
+				if(True):
+					script.addChild( Gaffer.Node( "True4" ) )
+
+				script.addChild( Gaffer.Node( "Unconditional3" ) )
+
+				if(True) :
+					script.addChild( Gaffer.Node( "True5" ) )
+
+				if (True):
+					script.addChild( Gaffer.Node( "True6" ) )
+
+				if True : script.addChild( Gaffer.Node( "True7" ) )
+				if False : script.addChild( Gaffer.Node( "False" ) )
+
+				"""
+			),
+			continueOnError = True
+		)
+
+		self.assertIn( "True1", script )
+		self.assertIn( "True2", script )
+		self.assertIn( "True3", script )
+		self.assertIn( "True4", script )
+		self.assertIn( "True5", script )
+		self.assertIn( "True6", script )
+		self.assertIn( "True7", script )
+		self.assertIn( "Unconditional1", script )
+		self.assertIn( "Unconditional2", script )
+		self.assertIn( "Unconditional3", script )
+		self.assertNotIn( "False", script )
+		self.assertNotIn( "True8", script )
+
+	def testLineNumbersAfterConditionalExecution( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		with IECore.CapturingMessageHandler() as mh :
+			script.execute(
+				inspect.cleandoc(
+					"""
+					if True :
+						script.addChild( Gaffer.Node( "True" ) )
+					a = 10 * b
+					"""
+				),
+				continueOnError = True
+			)
+
+		self.assertIn( "True", script )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertTrue( "Line 3" in mh.messages[0].context )
+		self.assertTrue( "name 'b' is not defined" in mh.messages[0].message )
 
 if __name__ == "__main__":
 	unittest.main()

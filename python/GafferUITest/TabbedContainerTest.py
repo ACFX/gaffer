@@ -70,12 +70,12 @@ class TabbedContainerTest( GafferUITest.TestCase ) :
 		b = GafferUI.Button( "baby" )
 		t.setCornerWidget( b )
 		self.assertTrue( t.getCornerWidget() is b )
-		self.assertTrue( b.parent() is t )
+		self.assertTrue( t.isAncestorOf( b ) )
 
 		b2 = GafferUI.Button( "b" )
 		t.setCornerWidget( b2 )
 		self.assertTrue( t.getCornerWidget() is b2 )
-		self.assertTrue( b2.parent() is t )
+		self.assertTrue( t.isAncestorOf( b2 ) )
 		self.assertIsNone( b.parent() )
 
 	def testIndex( self ) :
@@ -132,7 +132,7 @@ class TabbedContainerTest( GafferUITest.TestCase ) :
 			self.assertTrue( t is tc )
 			self.__current = c
 
-		c = tc.currentChangedSignal().connect( s )
+		c = tc.currentChangedSignal().connect( s, scoped = True )
 		self.__current = None
 
 		self.assertIsNone( tc.getCurrent() )
@@ -228,7 +228,7 @@ class TabbedContainerTest( GafferUITest.TestCase ) :
 
 		t.setCornerWidget( b )
 		self.assertEqual( len( l ), 0 )
-		self.assertEqual( b.parent(), t )
+		self.assertTrue( t.isAncestorOf( b ) )
 
 	def testInsert( self ) :
 
@@ -293,6 +293,31 @@ class TabbedContainerTest( GafferUITest.TestCase ) :
 		l3.reveal()
 		self.assertTrue( t1.getCurrent() is t3 )
 		self.assertTrue( t3.getCurrent() is c3 )
+
+	def testTabVisibility( self ) :
+
+		with GafferUI.TabbedContainer() as container :
+			t1 = GafferUI.Label()
+			t2 = GafferUI.Label()
+			t3 = GafferUI.Label()
+
+		for tab in t1, t2, t3 :
+			self.assertTrue( container.getTabVisible( tab ) )
+
+		container.setTabVisible( t2, False )
+
+		for tab in t1, t2, t3 :
+			self.assertEqual( container.getTabVisible( tab ), tab is not t2 )
+
+		container.removeChild( t1 )
+
+		for tab in t2, t3 :
+			self.assertEqual( container.getTabVisible( tab ), tab is not t2 )
+
+		container.setTabVisible( t2, True )
+
+		for tab in t2, t3 :
+			self.assertTrue( container.getTabVisible( tab ) )
 
 	def tearDown( self ) :
 

@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_PRIMITIVESAMPLER_H
-#define GAFFERSCENE_PRIMITIVESAMPLER_H
+#pragma once
 
 #include "GafferScene/Deformer.h"
 
@@ -55,7 +54,7 @@ class GAFFERSCENE_API PrimitiveSampler : public Deformer
 
 		~PrimitiveSampler() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::PrimitiveSampler, PrimitiveSamplerTypeId, Deformer );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::PrimitiveSampler, PrimitiveSamplerTypeId, Deformer );
 
 		ScenePlug *sourcePlug();
 		const ScenePlug *sourcePlug() const;
@@ -74,7 +73,7 @@ class GAFFERSCENE_API PrimitiveSampler : public Deformer
 
 	protected :
 
-		PrimitiveSampler( const std::string &name = defaultName<PrimitiveSampler>() );
+		explicit PrimitiveSampler( const std::string &name = defaultName<PrimitiveSampler>() );
 
 		/// SamplingFunction
 		/// ================
@@ -130,5 +129,3 @@ class GAFFERSCENE_API PrimitiveSampler : public Deformer
 IE_CORE_DECLAREPTR( PrimitiveSampler )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_PRIMITIVESAMPLER_H

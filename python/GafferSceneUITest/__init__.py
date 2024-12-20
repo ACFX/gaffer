@@ -50,7 +50,22 @@ from .ContextAlgoTest import ContextAlgoTest
 from .CameraToolTest import CameraToolTest
 from .VisualiserTest import VisualiserTest
 from .TransformToolTest import TransformToolTest
-from .SourceSetTest import SourceSetTest
+from .CropWindowToolTest import CropWindowToolTest
+from .NodeUITest import NodeUITest
+from .ParameterInspectorTest import ParameterInspectorTest
+from .AttributeInspectorTest import AttributeInspectorTest
+from .HistoryPathTest import HistoryPathTest
+from .LightEditorTest import LightEditorTest
+from .SetMembershipInspectorTest import SetMembershipInspectorTest
+from .SetEditorTest import SetEditorTest
+from .LightToolTest import LightToolTest
+from .OptionInspectorTest import OptionInspectorTest
+from .LightPositionToolTest import LightPositionToolTest
+from .RenderPassEditorTest import RenderPassEditorTest
+from .SelectionToolTest import SelectionToolTest
+from .InspectorColumnTest import InspectorColumnTest
+from .ScriptNodeAlgoTest import ScriptNodeAlgoTest
+from .AttributeEditorTest import AttributeEditorTest
 
 if __name__ == "__main__":
 	unittest.main()

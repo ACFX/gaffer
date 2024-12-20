@@ -44,7 +44,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Clamp );
+GAFFER_NODE_DEFINE_TYPE( Clamp );
 
 size_t Clamp::g_firstPlugIndex = 0;
 
@@ -155,8 +155,10 @@ bool Clamp::enabled() const
 		return false;
 	}
 
-	if( minEnabledPlug()->getValue() == false &&
-	    maxEnabledPlug()->getValue() == false )
+	if(
+		minEnabledPlug()->getValue() == false &&
+		maxEnabledPlug()->getValue() == false
+	)
 	{
 		return false;
 	}

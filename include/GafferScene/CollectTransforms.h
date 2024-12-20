@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_COLLECTTRANSFORMS_H
-#define GAFFERSCENE_COLLECTTRANSFORMS_H
+#pragma once
 
 #include "GafferScene/AttributeProcessor.h"
 
@@ -54,10 +53,10 @@ class GAFFERSCENE_API CollectTransforms : public AttributeProcessor
 
 	public :
 
-		CollectTransforms( const std::string &name=defaultName<CollectTransforms>() );
+		explicit CollectTransforms( const std::string &name=defaultName<CollectTransforms>() );
 		~CollectTransforms() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CollectTransforms, CollectTransformsTypeId, AttributeProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::CollectTransforms, CollectTransformsTypeId, AttributeProcessor );
 
 		Gaffer::StringVectorDataPlug *attributesPlug();
 		const Gaffer::StringVectorDataPlug *attributesPlug() const;
@@ -94,5 +93,3 @@ class GAFFERSCENE_API CollectTransforms : public AttributeProcessor
 IE_CORE_DECLAREPTR( CollectTransforms )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_COLLECTTRANSFORMS_H

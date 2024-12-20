@@ -49,6 +49,8 @@
 #include "boost/mpl/for_each.hpp"
 #include "boost/mpl/list.hpp"
 
+#include "fmt/format.h"
+
 using namespace std;
 using namespace Imath;
 using namespace IECoreGLPreview;
@@ -73,7 +75,6 @@ public:
 			{ openvdb::typeNameAsString<int32_t>(), []( GeometryCollector& collector, openvdb::GridBase::ConstPtr grid ) { collector.collectTyped<openvdb::Int32Grid>( grid ); } },
 			{ openvdb::typeNameAsString<int64_t>(), []( GeometryCollector& collector , openvdb::GridBase::ConstPtr grid) { collector.collectTyped<openvdb::Int64Grid>( grid ); } },
 			{ openvdb::typeNameAsString<openvdb::ValueMask>(), []( GeometryCollector& collector , openvdb::GridBase::ConstPtr grid) { collector.collectTyped<openvdb::MaskGrid>( grid ); } },
-			{ openvdb::typeNameAsString<std::string>(), []( GeometryCollector& collector , openvdb::GridBase::ConstPtr grid) { collector.collectTyped<openvdb::StringGrid>( grid ); } },
 			{ openvdb::typeNameAsString<openvdb::Vec3d>(), []( GeometryCollector& collector , openvdb::GridBase::ConstPtr grid) { collector.collectTyped<openvdb::Vec3DGrid>( grid ); } },
 			{ openvdb::typeNameAsString<openvdb::Vec3i>(), []( GeometryCollector& collector , openvdb::GridBase::ConstPtr grid) { collector.collectTyped<openvdb::Vec3IGrid>( grid ); } },
 			{ openvdb::typeNameAsString<openvdb::Vec3f>(), []( GeometryCollector& collector , openvdb::GridBase::ConstPtr grid) { collector.collectTyped<openvdb::Vec3SGrid>( grid ); } },
@@ -87,7 +88,7 @@ public:
 		}
 		else
 		{
-			throw IECore::InvalidArgumentException( boost::str( boost::format( "VDBVisualiser: Incompatible Grid found name: '%1%' type: '%2' " ) % grid->valueType() % grid->getName() ) );
+			throw IECore::InvalidArgumentException( fmt::format( "VDBVisualiser: Incompatible Grid found name: '{}' type: '{}' ", grid->valueType(), grid->getName() ) );
 		}
 	}
 
@@ -135,8 +136,8 @@ private:
 		openvdb::Index64 count = openvdb::points::pointCount( pointsGrid->tree() );
 
 		IECore::V3fVectorDataPtr pointData = new IECore::V3fVectorData();
-		auto &points = pointData->writable();
-		points.reserve( count );
+		auto &pts = pointData->writable();
+		pts.reserve( count );
 
 		for (auto leafIter = pointsGrid->tree().cbeginLeaf(); leafIter; ++leafIter) {
 			const openvdb::points::AttributeArray& array =  leafIter->constAttributeArray("P");
@@ -147,7 +148,7 @@ private:
 				openvdb::Vec3f voxelPosition = positionHandle.get( *indexIter );
 				const openvdb::Vec3d xyz = indexIter.getCoord().asVec3d();
 				openvdb::Vec3f worldPosition =  pointsGrid->transform().indexToWorld( voxelPosition + xyz );
-				points.push_back( Imath::Vec3<float>( worldPosition[0], worldPosition[1], worldPosition[2] ) );
+				pts.push_back( Imath::Vec3<float>( worldPosition[0], worldPosition[1], worldPosition[2] ) );
 			}
 		}
 
@@ -275,7 +276,7 @@ class VDBVisualiser : public ObjectVisualiser
 
 	public :
 
-		typedef VDBObject ObjectType;
+		using ObjectType = VDBObject;
 
 		VDBVisualiser()
 		{

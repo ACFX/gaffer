@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_PRUNE_H
-#define GAFFERSCENE_PRUNE_H
+#pragma once
 
 #include "GafferScene/FilteredSceneProcessor.h"
 
@@ -47,10 +46,10 @@ class GAFFERSCENE_API Prune : public FilteredSceneProcessor
 
 	public :
 
-		Prune( const std::string &name=defaultName<Prune>() );
+		explicit Prune( const std::string &name=defaultName<Prune>() );
 		~Prune() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Prune, PruneTypeId, FilteredSceneProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Prune, PruneTypeId, FilteredSceneProcessor );
 
 		Gaffer::BoolPlug *adjustBoundsPlug();
 		const Gaffer::BoolPlug *adjustBoundsPlug() const;
@@ -76,5 +75,3 @@ class GAFFERSCENE_API Prune : public FilteredSceneProcessor
 IE_CORE_DECLAREPTR( Prune )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_PRUNE_H

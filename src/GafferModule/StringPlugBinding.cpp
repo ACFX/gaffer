@@ -57,12 +57,18 @@ void setValue( StringPlug *plug, const std::string& value )
 	plug->setValue( value );
 }
 
-std::string getValue( const StringPlug *plug, const IECore::MurmurHash *precomputedHash )
+void setPathValue( StringPlug *plug, const std::filesystem::path &value )
+{
+	IECorePython::ScopedGILRelease r;
+	plug->setValue( value );
+}
+
+std::string getValue( const StringPlug *plug )
 {
 	// Must release GIL in case computation spawns threads which need
 	// to reenter Python.
 	IECorePython::ScopedGILRelease r;
-	return plug->getValue( precomputedHash );
+	return plug->getValue();
 }
 
 std::string substitutionsRepr( unsigned substitutions )
@@ -101,12 +107,16 @@ std::string substitutionsRepr( unsigned substitutions )
 	return result;
 }
 
-std::string serialisationRepr( const Gaffer::StringPlug *plug, const Serialisation *serialisation )
+std::string serialisationRepr( const Gaffer::StringPlug *plug, Serialisation *serialisation )
 {
 	std::string extraArguments;
 	if( plug->substitutions() != IECore::StringAlgo::AllSubstitutions )
 	{
 		extraArguments = "substitutions = " + substitutionsRepr( plug->substitutions() );
+		if( serialisation )
+		{
+			serialisation->addModule( "IECore" );
+		}
 	}
 	return ValuePlugSerialiser::repr( plug, extraArguments, serialisation );
 }
@@ -121,7 +131,7 @@ class StringPlugSerialiser : public ValuePlugSerialiser
 
 	public :
 
-		std::string constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const override
+		std::string constructor( const Gaffer::GraphComponent *graphComponent, Serialisation &serialisation ) const override
 		{
 			return serialisationRepr( static_cast<const StringPlug *>( graphComponent ), &serialisation );
 		}
@@ -133,7 +143,7 @@ class StringPlugSerialiser : public ValuePlugSerialiser
 void GafferModule::bindStringPlug()
 {
 
-	PlugClass<StringPlug>()
+	boost::python::scope s = PlugClass<StringPlug>()
 		.def(
 			boost::python::init<const std::string &, Gaffer::Plug::Direction, const std::string &, unsigned, unsigned>(
 				(
@@ -148,9 +158,13 @@ void GafferModule::bindStringPlug()
 		.def( "__repr__", &repr )
 		.def( "substitutions", &StringPlug::substitutions )
 		.def( "defaultValue", &StringPlug::defaultValue, return_value_policy<boost::python::copy_const_reference>() )
+		// Must be registered before string-based `setValue()`, to give it weaker overloading precedence.
+		.def( "setValue", &setPathValue )
 		.def( "setValue", &setValue )
-		.def( "getValue", &getValue, ( boost::python::arg( "_precomputedHash" ) = object() ) )
+		.def( "getValue", &getValue )
 	;
+
+	s.attr( "ValueType" ) = boost::python::object( boost::python::handle<>( boost::python::borrowed( &PyUnicode_Type ) ) );
 
 	Serialisation::registerSerialiser( StringPlug::staticTypeId(), new StringPlugSerialiser );
 

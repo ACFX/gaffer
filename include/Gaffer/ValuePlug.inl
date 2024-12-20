@@ -34,22 +34,24 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/format.hpp"
+#include "fmt/format.h"
 
 namespace Gaffer
 {
 
 template<typename T>
-boost::intrusive_ptr<const T> ValuePlug::getObjectValue( const IECore::MurmurHash *precomputedHash ) const
+const T *ValuePlug::getObjectValue( IECore::ConstObjectPtr &owner, const IECore::MurmurHash *precomputedHash ) const
 {
-	boost::intrusive_ptr<const T> result = IECore::runTimeCast<const T>( getValueInternal( precomputedHash ) );
-	if( !result )
+	const IECore::Object *value = getValueInternal( owner, precomputedHash );
+	if( value && value->isInstanceOf( T::staticTypeId() ) )
 	{
-		throw IECore::Exception( boost::str(
-			boost::format( "%1% : getValueInternal() didn't return expected type - is the hash being computed correctly?" ) % fullName()
-		) );
+		return static_cast<const T *>( value );
 	}
-	return result;
+
+	throw IECore::Exception( fmt::format(
+		"{} : getValueInternal() didn't return expected type (wanted {} but got {}). Is the hash being computed correctly?",
+		fullName(), T::staticTypeName(), value ? value->typeName() : "nullptr"
+	) );
 }
 
 } // namespace Gaffer

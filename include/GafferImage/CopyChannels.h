@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_COPYCHANNELS_H
-#define GAFFERIMAGE_COPYCHANNELS_H
+#pragma once
 
 #include "GafferImage/FlatImageProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERIMAGE_API CopyChannels : public FlatImageProcessor
 
 	public :
 
-		CopyChannels( const std::string &name=defaultName<CopyChannels>() );
+		explicit CopyChannels( const std::string &name=defaultName<CopyChannels>() );
 		~CopyChannels() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::CopyChannels, CopyChannelsTypeId, FlatImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::CopyChannels, CopyChannelsTypeId, FlatImageProcessor );
 
 		Gaffer::StringPlug *channelsPlug();
 		const Gaffer::StringPlug *channelsPlug() const;
@@ -85,5 +84,3 @@ class GAFFERIMAGE_API CopyChannels : public FlatImageProcessor
 IE_CORE_DECLAREPTR( CopyChannels )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_COPYCHANNELS_H

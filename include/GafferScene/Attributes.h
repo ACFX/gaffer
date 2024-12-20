@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_ATTRIBUTES_H
-#define GAFFERSCENE_ATTRIBUTES_H
+#pragma once
 
 #include "GafferScene/AttributeProcessor.h"
 
@@ -51,10 +50,10 @@ class GAFFERSCENE_API Attributes : public AttributeProcessor
 
 	public :
 
-		Attributes( const std::string &name=defaultName<Attributes>() );
+		explicit Attributes( const std::string &name=defaultName<Attributes>() );
 		~Attributes() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Attributes, AttributesTypeId, AttributeProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Attributes, AttributesTypeId, AttributeProcessor );
 
 		Gaffer::CompoundDataPlug *attributesPlug();
 		const Gaffer::CompoundDataPlug *attributesPlug() const;
@@ -62,8 +61,8 @@ class GAFFERSCENE_API Attributes : public AttributeProcessor
 		Gaffer::BoolPlug *globalPlug();
 		const Gaffer::BoolPlug *globalPlug() const;
 
-		Gaffer::AtomicCompoundDataPlug *extraAttributesPlug();
-		const Gaffer::AtomicCompoundDataPlug *extraAttributesPlug() const;
+		Gaffer::CompoundObjectPlug *extraAttributesPlug();
+		const Gaffer::CompoundObjectPlug *extraAttributesPlug() const;
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -89,5 +88,3 @@ class GAFFERSCENE_API Attributes : public AttributeProcessor
 IE_CORE_DECLAREPTR( Attributes )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_ATTRIBUTES_H

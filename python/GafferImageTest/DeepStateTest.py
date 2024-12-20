@@ -56,8 +56,8 @@ import GafferImageTest
 
 class DeepStateTest( GafferImageTest.ImageTestCase ) :
 
-	representativeImagePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/representativeDeepImage.exr" )
-	mergeReferencePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/deepMergeReference.exr" )
+	representativeImagePath = GafferImageTest.ImageTestCase.imagesPath() / "representativeDeepImage.exr"
+	mergeReferencePath = GafferImageTest.ImageTestCase.imagesPath() / "deepMergeReference.exr"
 
 
 	longMessage = True
@@ -352,15 +352,15 @@ class DeepStateTest( GafferImageTest.ImageTestCase ) :
 		iState['in'].setInput( m['out'] )
 		iState['deepState'].setValue( GafferImage.DeepState.TargetState.Flat )
 
-		testFile = self.temporaryDirectory() + "/test.Flat.exr"
-		self.assertFalse( os.path.exists( testFile ) )
+		testFile = self.temporaryDirectory() / "test.Flat.exr"
+		self.assertFalse( testFile.exists() )
 
 		w = GafferImage.ImageWriter()
 		w['in'].setInput( iState["out"] )
 
 		w["fileName"].setValue( testFile )
 		with Gaffer.Context() :
-			w.execute()
+			w["task"].execute()
 
 
 	def testSampleOffsets( self ) :
@@ -960,7 +960,7 @@ class DeepStateTest( GafferImageTest.ImageTestCase ) :
 
 		referenceNoZBack = GafferImage.Shuffle()
 		referenceNoZBack["in"].setInput( deepMerge["out"] )
-		referenceNoZBack["channels"].addChild( referenceNoZBack.ChannelPlug( "ZBack", "Z" ) )
+		referenceNoZBack["shuffles"].addChild( Gaffer.ShufflePlug( "Z", "ZBack" ) )
 
 		referenceFlatten["in"].setInput( referenceNoZBack["out"] )
 
@@ -1029,4 +1029,3 @@ class DeepStateTest( GafferImageTest.ImageTestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

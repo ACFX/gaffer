@@ -47,8 +47,8 @@ import GafferImageTest
 
 class DeepRecolorTest( GafferImageTest.ImageTestCase ) :
 
-	representativeImagePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/representativeDeepImage.exr" )
-	flatImagePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/rgb.100x100.exr" )
+	representativeImagePath = GafferImageTest.ImageTestCase.imagesPath() / "representativeDeepImage.exr"
+	flatImagePath = GafferImageTest.ImageTestCase.imagesPath() / "rgb.100x100.exr"
 
 	def testBasics( self ):
 		representativeImage = GafferImage.ImageReader()
@@ -83,7 +83,7 @@ class DeepRecolorTest( GafferImageTest.ImageTestCase ) :
 		flatCombine["in"][0].setInput( representativeFlat["out"] )
 		flatCombine["in"][1].setInput( unpremult["out"] )
 		flatCombine["channels"].setValue( "[RGB]" )
-	
+
 		premult = GafferImage.Premultiply()
 		premult["in"].setInput( flatCombine["out"] )
 

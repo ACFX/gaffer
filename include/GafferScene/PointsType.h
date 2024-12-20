@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_POINTSTYPE_H
-#define GAFFERSCENE_POINTSTYPE_H
+#pragma once
 
 #include "GafferScene/ObjectProcessor.h"
 
@@ -54,10 +53,10 @@ class GAFFERSCENE_API PointsType : public ObjectProcessor
 
 	public :
 
-		PointsType( const std::string &name=defaultName<PointsType>() );
+		explicit PointsType( const std::string &name=defaultName<PointsType>() );
 		~PointsType() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::PointsType, PointsTypeTypeId, ObjectProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::PointsType, PointsTypeTypeId, ObjectProcessor );
 
 		Gaffer::StringPlug *typePlug();
 		const Gaffer::StringPlug *typePlug() const;
@@ -77,5 +76,3 @@ class GAFFERSCENE_API PointsType : public ObjectProcessor
 IE_CORE_DECLAREPTR( PointsType )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_POINTSTYPE_H

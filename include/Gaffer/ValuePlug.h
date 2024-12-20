@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFER_VALUEPLUG_H
-#define GAFFER_VALUEPLUG_H
+#pragma once
 
 #include "Gaffer/Plug.h"
 
@@ -58,7 +57,7 @@ class GAFFER_API ValuePlug : public Plug
 	public :
 
 		/// Constructs a ValuePlug which can be used as a parent for other ValuePlugs.
-		ValuePlug( const std::string &name=defaultName<ValuePlug>(), Direction direction=In, unsigned flags=Default );
+		explicit ValuePlug( const std::string &name=defaultName<ValuePlug>(), Direction direction=In, unsigned flags=Default );
 		~ValuePlug() override;
 
 		GAFFER_PLUG_DECLARE_TYPE( Gaffer::ValuePlug, ValuePlugTypeId, Plug );
@@ -96,6 +95,19 @@ class GAFFER_API ValuePlug : public Plug
 		/// > we always consider it to be non-default, because it may vary
 		/// > by context. `isSetToDefault()` does not trigger computes.
 		virtual bool isSetToDefault() const;
+		/// Modifies the default value of this plug to match the current
+		/// value. The default implementation is sufficient for all
+		/// subclasses except those where the number of child plugs varies
+		/// based on the value.
+		/// \undoable
+		virtual void resetDefault();
+		/// Returns a hash representing the default value. The default
+		/// implementation is sufficient for all subclasses except those
+		/// where the number of child plugs varies based on the value.
+		/// The results of `defaultHash()` may not be comparable to those
+		/// of `hash()`; use `isSetToDefault()` to determine if a plug is
+		/// currently at its default value.
+		virtual IECore::MurmurHash defaultHash() const;
 
 		/// Returns a hash to represent the value of this plug
 		/// in the current context.
@@ -107,41 +119,29 @@ class GAFFER_API ValuePlug : public Plug
 		/// and hash for output plugs.
 		enum class CachePolicy
 		{
-			/// No caching is performed. Suitable for
-			/// extremely quick processes. Also useful
-			/// to avoid double-counting of cache memory when
-			/// a compute always returns a sub-object of another
-			/// cache entry.
+			/// No caching is performed. Suitable for extremely quick processes.
+			/// Also useful to avoid double-counting of cache memory when a
+			/// compute always returns a sub-object of another cache entry.
 			Uncached,
-			/// Suitable for regular processes that don't spawn
-			/// TBB tasks. It is essential that any task-spawning
-			/// processes use one of the dedicated policies below.
-			/// \todo It isn't actually clear that the locking of the
-			/// Standard policy is an improvement over the non-locked
-			/// Legacy policy. Locking on a downstream Standard
-			/// compute might prevent multiple threads from participating
-			/// in an upstream TaskCollaboration. And for small computes
-			/// that are unlikely to be needed by multiple threads,
-			/// we may well prefer to avoid the contention. Note that
-			/// many scene computes may fit this category, as every
-			/// non-filtered location is implemented as a very cheap
-			/// pass-through compute. There's also a decent argument
-			/// that any non-trivial amount of work should be using TBB,
-			/// so it would be a mistake to do anything expensive with
-			/// a Standard policy anyway.
+			/// Deprecated synonym for TaskCollaboration (for
+			/// `computeCachePolicy()`) and Default (for `hashCachePolicy()`).
+			/// Will be removed in a future release.
 			Standard,
-			/// Suitable for processes that spawn TBB tasks.
-			/// Threads waiting for the same result will collaborate
-			/// to perform tasks together until the work is complete.
+			/// Must be used for processes that spawn TBB tasks. Results are
+			/// stored in a global cache, and threads waiting for the same
+			/// result will collaborate to perform tasks together until the work
+			/// is complete.
 			TaskCollaboration,
-			/// Suitable for processes that spawn TBB tasks. Threads
-			/// waiting for an in-progress compute will block until
-			/// it is complete. In theory this is inferior to TaskCollaboration,
-			/// but due to TBB overhead it may be preferable for small
-			/// but frequent computes.
+			/// Deprecated synonym for TaskCollaboration. Will be removed in a
+			/// future release.
 			TaskIsolation,
-			/// Legacy policy, to be removed.
-			Legacy
+			/// Suitable for relatively lightweight processes that could benefit
+			/// from caching, but do not spawn TBB tasks, and are unlikely to be
+			/// required from multiple threads concurrently.
+			Default,
+			/// Deprecated synonym for Default. Will be removed in a future
+			/// release.
+			Legacy = Default
 		};
 
 		/// @name Cache management
@@ -170,11 +170,47 @@ class GAFFER_API ValuePlug : public Plug
 		/// > Note : Limits are applied on a per-thread basis as and
 		/// > when each thread is used to compute a hash.
 		static void setHashCacheSizeLimit( size_t maxEntriesPerThread );
+		/// Returns the total number of entries in both global and per-thread hash caches
+		static size_t hashCacheTotalUsage();
 		/// Clears the hash cache.
-		/// > Note : Clearing occurs on a per-thread basis as and when
-		/// > each thread next accesses the cache.
-		static void clearHashCache();
+		/// > Note : By default, clearing occurs on a per-thread basis as
+		/// > and when each thread next accesses its cache. Pass `now = true`
+		/// > to force all thread-local caches to be cleared immediately
+		/// > (this is not thread-safe with respect to concurrent computations).
+		static void clearHashCache( bool now = false );
+
+		/// The standard hash cache mode relies on correctly implemented
+		/// affects() methods to selectively clear the cache for dirtied
+		/// plugs.  If you have incorrect affects() methods, you can use
+		/// "Legacy", which pessimisticly dirties all hash cache entries
+		/// when something changes, or "Checked" which helps identify
+		/// bad affects() methods by throwing exceptions.
+		enum class HashCacheMode
+		{
+			Standard,
+			Checked,
+			Legacy
+		};
+		static void setHashCacheMode( HashCacheMode hashCacheMode );
+		static HashCacheMode getHashCacheMode();
+
 		//@}
+
+		/// Returns a counter that increments when this plug is been dirtied
+		/// ( but doesn't necessarily start at 0 ). This is used internally
+		/// for cache invalidation but may also be useful for debugging and
+		/// as part of a "poor man's hash" where computing the full upstream
+		/// hash might be prohibitively expensive
+		/// (see `Encapsulate::hashObject()` for example).
+		uint64_t dirtyCount() const
+		{
+			return m_dirtyCount;
+		}
+
+		/// Process type tags.  In the future, it might make more sense to
+		/// use an id registry here, rather than strings.
+		static const IECore::InternedString &hashProcessType();
+		static const IECore::InternedString &computeProcessType();
 
 	protected :
 
@@ -188,8 +224,8 @@ class GAFFER_API ValuePlug : public Plug
 		ValuePlug( const std::string &name, Direction direction,
 			IECore::ConstObjectPtr defaultValue, unsigned flags );
 
-		/// Returns the default value that was passed to the constructor.
-		/// It is imperative that this value is not changed.
+		/// Returns the default value. It is imperative that this object is not
+		/// modified.
 		const IECore::Object *defaultObjectValue() const;
 
 		/// Internally all values are stored as instances of classes derived
@@ -202,16 +238,19 @@ class GAFFER_API ValuePlug : public Plug
 		/// objects with each query - this allows it to support the calculation
 		/// of values in different contexts and on different threads.
 		///
-		/// The value is returned via a reference counted pointer, as
-		/// following return from getObjectValue(), it is possible that nothing
-		/// else references the value - the value could have come from the cache
-		/// and then have been immediately removed by another thread.
+		/// The value is returned directly via a raw pointer, allowing us to omit
+		/// reference counting for the common case where the plug owns its own static
+		/// (non-computed) value. In cases where the value will be computed, a
+		/// a reference must be taken, so `owner` is assigned to keep the value alive.
 		///
 		/// If a precomputed hash is available it may be passed to avoid computing
-		/// it again unnecessarily. Passing an incorrect hash has dire consequences, so
-		/// use with care.
+		/// it again unnecessarily.
+		///
+		/// > Caution : Passing an incorrect `precomputedHash` has dire consequences,
+		/// so use with care. The hash must be the direct result of `ValuePlug::hash()`,
+		/// so this feature is not suitable for use in classes that override that method.
 		template<typename T = IECore::Object>
-		boost::intrusive_ptr<const T> getObjectValue( const IECore::MurmurHash *precomputedHash = nullptr ) const;
+		const T *getObjectValue( IECore::ConstObjectPtr &owner, const IECore::MurmurHash *precomputedHash = nullptr ) const;
 		/// Should be called by derived classes when they wish to set the plug
 		/// value - the value is referenced directly (not copied) and so must
 		/// not be changed following the call.
@@ -228,7 +267,7 @@ class GAFFER_API ValuePlug : public Plug
 		class ComputeProcess;
 		class SetValueAction;
 
-		IECore::ConstObjectPtr getValueInternal( const IECore::MurmurHash *precomputedHash = nullptr ) const;
+		const IECore::Object *getValueInternal( IECore::ConstObjectPtr &owner, const IECore::MurmurHash *precomputedHash = nullptr ) const;
 		void setValueInternal( IECore::ConstObjectPtr value, bool propagateDirtiness );
 		void childAddedOrRemoved();
 		// Emits the appropriate Node::plugSetSignal() for this plug and all its
@@ -247,16 +286,6 @@ class GAFFER_API ValuePlug : public Plug
 
 IE_CORE_DECLAREPTR( ValuePlug )
 
-typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, ValuePlug> > ValuePlugIterator;
-typedef FilteredChildIterator<PlugPredicate<Plug::In, ValuePlug> > InputValuePlugIterator;
-typedef FilteredChildIterator<PlugPredicate<Plug::Out, ValuePlug> > OutputValuePlugIterator;
-
-typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, ValuePlug>, PlugPredicate<> > RecursiveValuePlugIterator;
-typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, ValuePlug>, PlugPredicate<> > RecursiveInputValuePlugIterator;
-typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, ValuePlug>, PlugPredicate<> > RecursiveOutputValuePlugIterator;
-
 } // namespace Gaffer
 
 #include "Gaffer/ValuePlug.inl"
-
-#endif // GAFFER_VALUEPLUG_H

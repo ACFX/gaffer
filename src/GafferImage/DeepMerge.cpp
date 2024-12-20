@@ -49,7 +49,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeepMerge );
+GAFFER_NODE_DEFINE_TYPE( DeepMerge );
 
 size_t DeepMerge::g_firstPlugIndex = 0;
 
@@ -61,6 +61,7 @@ DeepMerge::DeepMerge( const std::string &name )
 	addChild( new IntVectorDataPlug( "__offsetsCache", Gaffer::Plug::Out, new IntVectorData() ) );
 
 	// We don't ever want to change these, so we make pass-through connections.
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 }
@@ -114,6 +115,14 @@ void DeepMerge::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outp
 			{
 				outputs.push_back( offsetsCachePlug() );
 			}
+
+			if( input == inputImage->viewNamesPlug() )
+			{
+				outputs.push_back( outPlug()->channelDataPlug() );
+				outputs.push_back( outPlug()->channelNamesPlug() );
+				outputs.push_back( outPlug()->dataWindowPlug() );
+				outputs.push_back( offsetsCachePlug() );
+			}
 		}
 
 	}
@@ -131,9 +140,9 @@ void DeepMerge::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *co
 	V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
 	const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
 
-	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
-		if( (*it)->getInput<ValuePlug>() )
+		if( (*it)->getInput<ValuePlug>() && ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) )
 		{
 			Box2i dataWindow;
 			{
@@ -180,6 +189,11 @@ void DeepMerge::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 			const ImagePlug *inP = inPlugs()->getChild<ImagePlug>( j );
 			if( inP && inP->getInput<ValuePlug>() )
 			{
+				if( !ImageAlgo::viewIsValid( context, inP->viewNames()->readable() ) )
+				{
+					continue;
+				}
+
 				Box2i dataWindow = inP->dataWindowPlug()->getValue();
 				Box2i validBound = BufferAlgo::intersection( tileBound, dataWindow );
 
@@ -261,19 +275,25 @@ void DeepMerge::hashDataWindow( const GafferImage::ImagePlug *output, const Gaff
 {
 	ImageProcessor::hashDataWindow( output, context, h );
 
-	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
-		(*it)->dataWindowPlug()->hash( h );
+		if( ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) )
+		{
+			(*it)->dataWindowPlug()->hash( h );
+		}
 	}
 }
 
 Imath::Box2i DeepMerge::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	Imath::Box2i dataWindow;
-	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
-		// We don't need to check that the plug is connected here as unconnected plugs don't have data windows.
-		dataWindow.extendBy( (*it)->dataWindowPlug()->getValue() );
+		if( ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) )
+		{
+			// We don't need to check that the plug is connected here as unconnected plugs don't have data windows.
+			dataWindow.extendBy( (*it)->dataWindowPlug()->getValue() );
+		}
 	}
 
 	return dataWindow;
@@ -283,9 +303,9 @@ void DeepMerge::hashChannelNames( const GafferImage::ImagePlug *output, const Ga
 {
 	ImageProcessor::hashChannelNames( output, context, h );
 
-	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
-		if( (*it)->getInput<ValuePlug>() )
+		if( ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) )
 		{
 			(*it)->channelNamesPlug()->hash( h );
 		}
@@ -297,9 +317,9 @@ IECore::ConstStringVectorDataPtr DeepMerge::computeChannelNames( const Gaffer::C
 	IECore::StringVectorDataPtr outChannelStrVectorData( new IECore::StringVectorData() );
 	std::vector<std::string> &outChannels( outChannelStrVectorData->writable() );
 
-	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
-		if( (*it)->getInput<ValuePlug>() )
+		if( ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) )
 		{
 			IECore::ConstStringVectorDataPtr inChannelStrVectorData((*it)->channelNamesPlug()->getValue() );
 			const std::vector<std::string> &inChannels( inChannelStrVectorData->readable() );
@@ -337,9 +357,9 @@ void DeepMerge::hashChannelData( const GafferImage::ImagePlug *output, const Gaf
 	}
 
 
-	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
+	for( ImagePlug::Iterator it( inPlugs() ); !it.done(); ++it )
 	{
-		if( !(*it)->getInput<ValuePlug>() )
+		if( !(*it)->getInput<ValuePlug>() || !ImageAlgo::viewIsValid( context, (*it)->viewNames()->readable() ) )
 		{
 			continue;
 		}
@@ -383,6 +403,11 @@ IECore::ConstFloatVectorDataPtr DeepMerge::computeChannelData( const std::string
 	{
 		int plugIndex = offsetsCache[j];
 		const ImagePlug *inP = inPlugs()->getChild<ImagePlug>( plugIndex );
+		if( !ImageAlgo::viewIsValid( context, inP->viewNames()->readable() ) )
+		{
+			channelExists[j] = 0;
+			continue;
+		}
 		ConstStringVectorDataPtr channelNamesData = inP->channelNamesPlug()->getValue();
 		const std::vector<std::string> &channelNames = channelNamesData->readable();
 		channelExists[j] = ImageAlgo::channelExists( channelNames, channelName );
@@ -393,8 +418,8 @@ IECore::ConstFloatVectorDataPtr DeepMerge::computeChannelData( const std::string
 	}
 
 	// In a per-tile and per-channel context, get a ptr to the channel data of each input
-	reusedScope.setTileOrigin( tileOrigin );
-	reusedScope.setChannelName( channelName );
+	reusedScope.setTileOrigin( &tileOrigin );
+	reusedScope.setChannelName( &channelName );
 	std::vector< ConstFloatVectorDataPtr > channelDatas( numInputs );
 	std::vector< const float* > channelPtrs( numInputs, nullptr );
 	for( int j = 0; j < numInputs; j++ )
@@ -410,9 +435,9 @@ IECore::ConstFloatVectorDataPtr DeepMerge::computeChannelData( const std::string
 		{
 			// Special case to copy Z to ZBack when combining images where some have ZBack
 			// and some don't
-			reusedScope.setChannelName( "Z" );
+			reusedScope.setChannelName( &ImageAlgo::channelNameZ );
 			channelDatas[j] = inP->channelDataPlug()->getValue();
-			reusedScope.setChannelName( channelName );
+			reusedScope.setChannelName( &channelName );
 		}
 		else
 		{
@@ -477,4 +502,3 @@ bool DeepMerge::computeDeep( const Gaffer::Context *context, const ImagePlug *pa
 {
 	return true;
 }
-

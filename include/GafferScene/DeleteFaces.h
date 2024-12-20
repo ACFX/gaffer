@@ -35,8 +35,7 @@
 /////////////////////////////////////////////////////////////////////////
 
 
-#ifndef GAFFERSCENE_DELETEFACES_H
-#define GAFFERSCENE_DELETEFACES_H
+#pragma once
 
 #include "GafferScene/Deformer.h"
 
@@ -55,7 +54,7 @@ class GAFFERSCENE_API DeleteFaces : public Deformer
 
 	public :
 
-		DeleteFaces( const std::string &name = defaultName<DeleteFaces>() );
+		explicit DeleteFaces( const std::string &name = defaultName<DeleteFaces>() );
 		~DeleteFaces() override;
 
 		Gaffer::StringPlug *facesPlug();
@@ -64,7 +63,10 @@ class GAFFERSCENE_API DeleteFaces : public Deformer
 		Gaffer::BoolPlug *invertPlug();
 		const Gaffer::BoolPlug *invertPlug() const;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::DeleteFaces, DeleteFacesTypeId, Deformer );
+		Gaffer::BoolPlug *ignoreMissingVariablePlug();
+		const Gaffer::BoolPlug *ignoreMissingVariablePlug() const;
+
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::DeleteFaces, DeleteFacesTypeId, Deformer );
 
 	protected :
 
@@ -81,6 +83,3 @@ class GAFFERSCENE_API DeleteFaces : public Deformer
 IE_CORE_DECLAREPTR( DeleteFaces )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_DELETEFACES_H
-

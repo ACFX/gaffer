@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERCORTEX_TYPEDPARAMETERHANDLER_H
-#define GAFFERCORTEX_TYPEDPARAMETERHANDLER_H
+#pragma once
 
 #include "GafferCortex/ParameterHandler.h"
 
@@ -55,10 +54,10 @@ class GAFFERCORTEX_API TypedParameterHandler : public ParameterHandler
 
 		IE_CORE_DECLAREMEMBERPTR( TypedParameterHandler<T> );
 
-		typedef IECore::TypedParameter<T> ParameterType;
-		typedef typename Gaffer::PlugType<T>::Type PlugType;
+		using ParameterType = IECore::TypedParameter<T>;
+		using PlugType = typename Gaffer::PlugType<T>::Type;
 
-		TypedParameterHandler( typename ParameterType::Ptr parameter );
+		explicit TypedParameterHandler( typename ParameterType::Ptr parameter );
 		~TypedParameterHandler() override;
 
 		IECore::Parameter *parameter() override;
@@ -84,5 +83,3 @@ class GAFFERCORTEX_API TypedParameterHandler : public ParameterHandler
 };
 
 } // namespace GafferCortex
-
-#endif // GAFFERCORTEX_TYPEDPARAMETERHANDLER_H

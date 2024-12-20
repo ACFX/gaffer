@@ -43,7 +43,7 @@ using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( PrimitiveVariables );
+GAFFER_NODE_DEFINE_TYPE( PrimitiveVariables );
 
 size_t PrimitiveVariables::g_firstPlugIndex = 0;
 
@@ -106,7 +106,7 @@ IECore::ConstObjectPtr PrimitiveVariables::computeProcessedObject( const ScenePa
 	PrimitivePtr result = inputPrimitive->copy();
 
 	std::string name;
-	for( NameValuePlugIterator it( p ); !it.done(); ++it )
+	for( NameValuePlug::Iterator it( p ); !it.done(); ++it )
 	{
 		IECore::DataPtr d = p->memberDataAndName( it->get(), name );
 		if( d )

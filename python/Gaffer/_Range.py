@@ -60,6 +60,18 @@ def __recursiveRange( cls, parent ) :
 Gaffer.GraphComponent.Range = classmethod( __range )
 Gaffer.GraphComponent.RecursiveRange = classmethod( __recursiveRange )
 
+def __recursiveNodeRange( cls, parent ) :
+
+	for i in range( 0, len( parent ) ) :
+		child = parent[i]
+		if isinstance( child, cls ) :
+			yield child
+		if isinstance( child, Gaffer.Node ) :
+			for r in __recursiveNodeRange( cls, child ) :
+				yield r
+
+Gaffer.Node.RecursiveRange = classmethod( __recursiveNodeRange )
+
 def __plugRange( cls, parent, direction ) :
 
 	for i in range( 0, len( parent ) ) :
@@ -82,4 +94,3 @@ Gaffer.Plug.OutputRange = classmethod( functools.partial( __plugRange, direction
 Gaffer.Plug.RecursiveRange = classmethod( __recursivePlugRange )
 Gaffer.Plug.RecursiveInputRange = classmethod( functools.partial( __recursivePlugRange, direction = Gaffer.Plug.Direction.In ) )
 Gaffer.Plug.RecursiveOutputRange = classmethod( functools.partial( __recursivePlugRange, direction = Gaffer.Plug.Direction.Out ) )
-

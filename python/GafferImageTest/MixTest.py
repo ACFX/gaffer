@@ -36,7 +36,6 @@
 
 import os
 import unittest
-import six
 import imath
 
 import IECore
@@ -48,12 +47,13 @@ import GafferImageTest
 
 class MixTest( GafferImageTest.ImageTestCase ) :
 
-	rPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/redWithDataWindow.100x100.exr" )
-	gPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/greenWithDataWindow.100x100.exr" )
-	checkerPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checkerboard.100x100.exr" )
-	checkerMixPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checkerMix.100x100.exr" )
-	representativeDeepImagePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/representativeDeepImage.exr" )
-	radialPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/radial.exr" )
+	rPath = GafferImageTest.ImageTestCase.imagesPath() / "redWithDataWindow.100x100.exr"
+	gPath = GafferImageTest.ImageTestCase.imagesPath() / "greenWithDataWindow.100x100.exr"
+	checkerPath = GafferImageTest.ImageTestCase.imagesPath() / "checkerboard.100x100.exr"
+	checkerNegativeDataWindowPath = GafferImageTest.ImageTestCase.imagesPath() / "checkerWithNegativeDataWindow.200x150.exr"
+	checkerMixPath = GafferImageTest.ImageTestCase.imagesPath() / "checkerMix.100x100.exr"
+	representativeDeepImagePath = GafferImageTest.ImageTestCase.imagesPath() / "representativeDeepImage.exr"
+	radialPath = GafferImageTest.ImageTestCase.imagesPath() / "radial.exr"
 
 	# Do several tests to check the cache is working correctly:
 	def testHashes( self ) :
@@ -136,7 +136,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( mix["out"]["channelNames"].hash(), g["out"]["channelNames"].hash() )
 
 		# Just check the first tile of the data to make sure hashes are passing through
-		with Gaffer.Context() as c :
+		with Gaffer.Context( Gaffer.Context.current() ) as c :
 			c[ "image:channelName" ] = IECore.StringData( "G" )
 			c[ "image:tileOrigin" ] = IECore.V2iData( imath.V2i( 0, 0 ) )
 			self.assertEqual( mix["out"]["channelData"].hash(), g["out"]["channelData"].hash() )
@@ -498,7 +498,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		offset["offset"].setValue( imath.V2i( 33, -25 ) )
 
 		addOffsetMarker = GafferImage.Shuffle()
-		addOffsetMarker["channels"].addChild( GafferImage.Shuffle.ChannelPlug( "offsetted", "__white" ) )
+		addOffsetMarker["shuffles"].addChild( Gaffer.ShufflePlug( "__white", "offsetted" ) )
 		addOffsetMarker["in"].setInput( offset["out"] )
 
 		deepMerge = GafferImage.DeepMerge()
@@ -593,13 +593,102 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		GafferImage.ImageAlgo.tiles( mix["out"] )
 
 		mix["in"][0].setInput( deep["out"] )
-		six.assertRaisesRegex( self, RuntimeError, 'Mix.out.deep : Cannot mix between deep and flat image.', GafferImage.ImageAlgo.tiles, mix["out"] )
+		self.assertRaisesRegex( RuntimeError, 'Mix.out.deep : Cannot mix between deep and flat image.', GafferImage.ImageAlgo.tiles, mix["out"] )
 		mix["in"][0].setInput( flat["out"] )
 		mix["in"][1].setInput( deep["out"] )
-		six.assertRaisesRegex( self, RuntimeError, 'Mix.out.deep : Cannot mix between deep and flat image.', GafferImage.ImageAlgo.tiles, mix["out"] )
+		self.assertRaisesRegex( RuntimeError, 'Mix.out.deep : Cannot mix between deep and flat image.', GafferImage.ImageAlgo.tiles, mix["out"] )
 
 		mix["in"][0].setInput( deep["out"] )
 		GafferImage.ImageAlgo.tiles( mix["out"] )
+
+	def testFuzzDataWindows( self ):
+
+		# A bunch of different test images with varying data windows
+		file1 = GafferImage.ImageReader()
+		file1["fileName"].setValue( self.checkerNegativeDataWindowPath )
+
+		file1Shuffle = GafferImage.Shuffle()
+		file1Shuffle["shuffles"].addChild( Gaffer.ShufflePlug( "R", "A" ) )
+		file1Shuffle['in'].setInput( file1['out'] )
+
+		file2 = GafferImage.ImageReader()
+		file2["fileName"].setValue( self.checkerPath )
+
+		file2Shuffle = GafferImage.Shuffle()
+		file2Shuffle["shuffles"].addChild( Gaffer.ShufflePlug( "R", "A" ) )
+		file2Shuffle['in'].setInput( file2['out'] )
+
+		largeConstant = GafferImage.Constant()
+		largeConstant["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 0 ), imath.V2i( 1920, 1080 ) ), 1 ) )
+		largeConstant["color"].setValue( imath.Color4f( 0.7, 0.8, 0.9, 0.65 ) )
+
+		smallConstant = GafferImage.Constant()
+		smallConstant["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 554, 210 ), imath.V2i( 1265, 869 ) ), 1 ) )
+		smallConstant["color"].setValue( imath.Color4f( 0.4, 0.5, 0.6, 0.45 ) )
+
+		leftConstant = GafferImage.Constant()
+		leftConstant["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( -353, -561 ), imath.V2i( 915, 500 ) ), 1 ) )
+		leftConstant["color"].setValue( imath.Color4f( 0.1, 0.2, 0.3, 0.75 ) )
+
+		rightConstant = GafferImage.Constant()
+		rightConstant["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 945, 557 ), imath.V2i( 2007, 1117 ) ), 1 ) )
+		rightConstant["color"].setValue( imath.Color4f( 0.61, 0.62, 0.63, 0.35 ) )
+
+		Mix = GafferImage.Mix( "Mix" )
+
+		# Create a network using Merge that should match the result of Mix
+		MaskPromote = GafferImage.Shuffle( "MaskPromote" )
+		MaskPromote["shuffles"].addChild( Gaffer.ShufflePlug( "A", "R" ) )
+		MaskPromote["shuffles"].addChild( Gaffer.ShufflePlug( "A", "G" ) )
+		MaskPromote["shuffles"].addChild( Gaffer.ShufflePlug( "A", "B" ) )
+		MaskPromote["shuffles"].addChild( Gaffer.ShufflePlug( "A", "A" ) )
+		MaskPromote['in'].setInput( Mix['mask'] )
+
+		Input0Mult = GafferImage.Merge( "Input0Mult" )
+		Input0Mult["operation"].setValue( GafferImage.Merge.Operation.Multiply )
+		Input0Mult['in'][0].setInput( Mix['in'][0] )
+		Input0Mult["in"][1].setInput( MaskPromote["out"] )
+
+		Input0Subtract = GafferImage.Merge( "Input0Subtract" )
+		Input0Subtract["operation"].setValue( GafferImage.Merge.Operation.Subtract )
+		Input0Subtract["in"][0].setInput( Input0Mult["out"] )
+		Input0Subtract['in'][1].setInput( Mix['in'][0] )
+
+		Input1Mult = GafferImage.Merge( "Input1Mult" )
+		Input1Mult["operation"].setValue( GafferImage.Merge.Operation.Multiply )
+		Input1Mult['in'][0].setInput( Mix['in'][1] )
+		Input1Mult["in"][1].setInput( MaskPromote["out"] )
+
+		ReferenceMerge = GafferImage.Merge( "ReferenceMerge" )
+		ReferenceMerge["operation"].setValue( GafferImage.Merge.Operation.Add )
+		ReferenceMerge["in"][0].setInput( Input0Subtract["out"] )
+		ReferenceMerge["in"][1].setInput( Input1Mult["out"] )
+
+		# Expand the data window of the reference to match the Mix, so we can compare
+		BlackBackground = GafferImage.Shuffle( "BlackBackground" )
+		BlackBackground["shuffles"].addChild( Gaffer.ShufflePlug( "__black", "R" ) )
+		BlackBackground["shuffles"].addChild( Gaffer.ShufflePlug( "__black", "G" ) )
+		BlackBackground["shuffles"].addChild( Gaffer.ShufflePlug( "__black", "B" ) )
+		BlackBackground["shuffles"].addChild( Gaffer.ShufflePlug( "__black", "A" ) )
+		BlackBackground["in"].setInput( Mix["out"] )
+
+		ReferenceWithDataWindow = GafferImage.Merge( "ReferenceWithDataWindow" )
+		ReferenceWithDataWindow["operation"].setValue( GafferImage.Merge.Operation.Over )
+		ReferenceWithDataWindow["in"][0].setInput( BlackBackground["out"] )
+		ReferenceWithDataWindow["in"][1].setInput( ReferenceMerge["out"] )
+
+		# For a more thorough test, use the full list of test images - but restricting to just 3 catches
+		# most failures, and takes just 2 seconds to test
+		#testImages = [ largeConstant, smallConstant, leftConstant, rightConstant, file1Shuffle, file2Shuffle ]
+		testImages = [ largeConstant, smallConstant, leftConstant ]
+		for input0 in testImages:
+			for input1 in testImages:
+				for mask in testImages:
+					Mix["in"][0].setInput( input0["out"] )
+					Mix["in"][1].setInput( input1["out"] )
+					Mix["mask"].setInput( mask["out"] )
+
+					self.assertImagesEqual( Mix["out"], ReferenceWithDataWindow["out"], maxDifference = 1e-7 )
 
 if __name__ == "__main__":
 	unittest.main()

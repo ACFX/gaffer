@@ -71,7 +71,7 @@ class VectorWarpTest( GafferImageTest.ImageTestCase ) :
 	def testVectorWarp( self ) :
 
 		reader = GafferImage.ImageReader()
-		reader["fileName"].setValue( os.path.dirname( __file__ ) + "/images/checker2x2.exr" )
+		reader["fileName"].setValue( self.imagesPath() / "checker2x2.exr" )
 
 		# Constant provides the same Vector across the board
 		# for the VectorWarp vector input.
@@ -102,7 +102,7 @@ class VectorWarpTest( GafferImageTest.ImageTestCase ) :
 	def testNegativeDataWindowOrigin( self ) :
 
 		reader = GafferImage.ImageReader()
-		reader["fileName"].setValue( os.path.dirname( __file__ ) + "/images/checker.exr" )
+		reader["fileName"].setValue( self.imagesPath() / "checker.exr" )
 
 		constant = GafferImage.Constant()
 		constant["color"].setValue( imath.Color4f( 0.5, 0, 0, 1 ) )
@@ -119,7 +119,7 @@ class VectorWarpTest( GafferImageTest.ImageTestCase ) :
 
 	def testWarpImage( self ):
 		dotGridReader = GafferImage.ImageReader()
-		dotGridReader["fileName"].setValue( os.path.dirname( __file__ ) + "/images/dotGrid.300.exr" )
+		dotGridReader["fileName"].setValue( self.imagesPath() / "dotGrid.300.exr" )
 
 		vectorWarp = GafferImage.VectorWarp()
 		vectorWarp["in"].setInput( dotGridReader["out"] )
@@ -142,18 +142,11 @@ class VectorWarpTest( GafferImageTest.ImageTestCase ) :
 		vectorWarp["vector"].setInput( toAbsoluteMerge["out"] )
 
 		vectorWarp["filter"].setValue( "box" )
-
-		testWriter = GafferImage.ImageWriter()
-		testWriter["in"].setInput( vectorWarp["out"] )
-		testWriter["fileName"].setValue( "/tmp/TODO.exr" )
-		testWriter["task"].execute()
-
 		self.assertImagesEqual( vectorWarp["out"], dotGridReader["out"], maxDifference = 0.00001 )
-
 
 		# Test that a warp with distortion produces an expected output
 		warpPatternReader = GafferImage.ImageReader()
-		warpPatternReader["fileName"].setValue( os.path.dirname( __file__ ) + "/images/warpPattern.exr" )
+		warpPatternReader["fileName"].setValue( self.imagesPath() / "warpPattern.exr" )
 
 		toAbsoluteMerge["in"]["in2"].setInput( warpPatternReader["out"] )
 
@@ -161,7 +154,7 @@ class VectorWarpTest( GafferImageTest.ImageTestCase ) :
 		vectorWarp["vector"].setInput( toAbsoluteMerge["out"] )
 
 		expectedReader = GafferImage.ImageReader()
-		expectedReader["fileName"].setValue( os.path.dirname( __file__ ) + "/images/dotGrid.warped.exr" )
+		expectedReader["fileName"].setValue( self.imagesPath() / "dotGrid.warped.exr" )
 		self.assertImagesEqual( vectorWarp["out"], expectedReader["out"], maxDifference = 0.0005, ignoreMetadata = True )
 
 		# Test that we can get the same result using pixel offsets instead of normalized coordinates
@@ -177,6 +170,65 @@ class VectorWarpTest( GafferImageTest.ImageTestCase ) :
 
 		self.assertImagesEqual( vectorWarp["out"], expectedReader["out"], maxDifference = 0.0005, ignoreMetadata = True )
 
+	def runPerfTest( self, sourceRes, resultRes, filter, useDerivs ):
+		warpPatternReader = GafferImage.ImageReader()
+		warpPatternReader["fileName"].setValue( self.imagesPath() / "warpPattern.exr" )
+
+		resize = GafferImage.Resize()
+		resize["in"].setInput( warpPatternReader["out"] )
+		resize['format']["displayWindow"]["min"].setValue( imath.V2i( 0 ) )
+		resize['format']["displayWindow"]["max"].setValue( imath.V2i( resultRes ) )
+
+		xRamp = GafferImage.Ramp()
+		xRamp["format"].setValue( GafferImage.Format( resultRes, resultRes ) )
+		xRamp["endPosition"].setValue( imath.V2f( resultRes, 0 ) )
+		xRamp["ramp"]["p1"]["y"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
+		yRamp = GafferImage.Ramp()
+		yRamp["format"].setValue( GafferImage.Format( resultRes, resultRes ) )
+		yRamp["endPosition"].setValue( imath.V2f( 0, resultRes ) )
+		yRamp["ramp"]["p1"]["y"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
+
+		toAbsoluteMerge = GafferImage.Merge()
+		toAbsoluteMerge["operation"].setValue( GafferImage.Merge.Operation.Add )
+		toAbsoluteMerge["in"]["in0"].setInput( xRamp["out"] )
+		toAbsoluteMerge["in"]["in1"].setInput( yRamp["out"] )
+		toAbsoluteMerge["in"]["in2"].setInput( resize["out"] )
+
+		dotGridReader = GafferImage.ImageReader()
+		dotGridReader["fileName"].setValue( self.imagesPath() / "dotGrid.300.exr" )
+
+		sourceResize = GafferImage.Resize()
+		sourceResize["in"].setInput( dotGridReader["out"] )
+		sourceResize['format']["displayWindow"]["min"].setValue( imath.V2i( 0 ) )
+		sourceResize['format']["displayWindow"]["max"].setValue( imath.V2i( sourceRes ) )
+
+		vectorWarp = GafferImage.VectorWarp()
+		vectorWarp["in"].setInput( sourceResize["out"] )
+		vectorWarp["vector"].setInput( toAbsoluteMerge["out"] )
+		vectorWarp["filter"].setValue( filter )
+		vectorWarp["useDerivatives"].setValue( useDerivs )
+
+		GafferImageTest.processTiles( toAbsoluteMerge["out"] )
+		GafferImageTest.processTiles( sourceResize["out"] )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			GafferImageTest.processTiles( vectorWarp["out"] )
+
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5 )
+	def testDerivsPerf( self ):
+		self.runPerfTest( 300, 2500, "cubic", True )
+
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5 )
+	def testNoDerivsPerf( self ):
+		self.runPerfTest( 300, 2500, "cubic", False )
+
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5 )
+	def testBilinearPerf( self ):
+		self.runPerfTest( 300, 2500, "bilinear", False )
+
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5 )
+	def testDownsamplePerf( self ):
+		self.runPerfTest( 6000, 300, "cubic", True )
 
 if __name__ == "__main__":
 	unittest.main()

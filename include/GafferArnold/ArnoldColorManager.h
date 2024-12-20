@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERARNOLD_ARNOLDCOLORMANAGER_H
-#define GAFFERARNOLD_ARNOLDCOLORMANAGER_H
+#pragma once
 
 #include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
@@ -50,15 +49,15 @@ namespace GafferArnold
 
 class ArnoldShader;
 
-class GAFFERSCENE_API ArnoldColorManager : public GafferScene::GlobalsProcessor
+class GAFFERARNOLD_API ArnoldColorManager : public GafferScene::GlobalsProcessor
 {
 
 	public :
 
-		ArnoldColorManager( const std::string &name=defaultName<ArnoldColorManager>() );
+		explicit ArnoldColorManager( const std::string &name=defaultName<ArnoldColorManager>() );
 		~ArnoldColorManager() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldColorManager, ArnoldColorManagerTypeId, GafferScene::GlobalsProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferArnold::ArnoldColorManager, ArnoldColorManagerTypeId, GafferScene::GlobalsProcessor );
 
 		Gaffer::Plug *parametersPlug();
 		const Gaffer::Plug *parametersPlug() const;
@@ -87,5 +86,3 @@ class GAFFERSCENE_API ArnoldColorManager : public GafferScene::GlobalsProcessor
 IE_CORE_DECLAREPTR( ArnoldColorManager )
 
 } // namespace GafferArnold
-
-#endif // GAFFERARNOLD_ARNOLDCOLORMANAGER_H

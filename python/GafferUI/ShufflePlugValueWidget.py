@@ -43,6 +43,8 @@ import IECore
 import Gaffer
 import GafferUI
 
+from Qt import QtWidgets
+
 ##########################################################################
 # ShufflePlug Widget
 ##########################################################################
@@ -51,37 +53,59 @@ import GafferUI
 # such as ShuffleAttributes and ShufflePrimitiveVariables.
 class ShufflePlugValueWidget( GafferUI.PlugValueWidget ) :
 
-	def __init__( self, plug ) :
+	def __init__( self, plugs ) :
 
 		self.__row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 )
 
-		GafferUI.PlugValueWidget.__init__( self, self.__row, plug )
+		GafferUI.PlugValueWidget.__init__( self, self.__row, plugs )
 
-		sourceWidget = GafferUI.StringPlugValueWidget( plug["source"] )
-		sourceWidget.textWidget()._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
+		sourceWidget = GafferUI.PlugValueWidget.create( { p["source"] for p in self.getPlugs() } )
+		sourceWidget._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
+		if sourceWidget._qtWidget().layout() is not None :
+			sourceWidget._qtWidget().layout().setSizeConstraint( QtWidgets.QLayout.SetDefaultConstraint )
+
 		self.__row.append( sourceWidget, verticalAlignment = GafferUI.Label.VerticalAlignment.Top )
 
 		self.__row.append(
-			GafferUI.BoolPlugValueWidget( plug["enabled"], displayMode = GafferUI.BoolWidget.DisplayMode.Switch ),
+			GafferUI.BoolPlugValueWidget(
+				{ p["enabled"] for p in self.getPlugs() },
+				displayMode = GafferUI.BoolWidget.DisplayMode.Switch
+			),
 			verticalAlignment = GafferUI.Label.VerticalAlignment.Top,
 		)
 
-		destinationWidget = GafferUI.StringPlugValueWidget( plug["destination"] )
-		destinationWidget.textWidget()._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
+		destinationWidget = GafferUI.PlugValueWidget.create( { p["destination"] for p in self.getPlugs() } )
+		destinationWidget._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
+		if destinationWidget._qtWidget().layout() is not None :
+			destinationWidget._qtWidget().layout().setSizeConstraint( QtWidgets.QLayout.SetDefaultConstraint )
 		self.__row.append( destinationWidget, verticalAlignment = GafferUI.Label.VerticalAlignment.Top )
 
-		self.__row.append( GafferUI.PlugValueWidget.create( plug["deleteSource"] ), expand = True )
+		deleteSourceWidget = GafferUI.BoolPlugValueWidget( { p["deleteSource"] for p in self.getPlugs() } )
+		deleteSourceWidget.boolWidget()._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() - 40 )
+		self.__row.append( deleteSourceWidget, verticalAlignment = GafferUI.Label.VerticalAlignment.Top )
+		self.__row.append(
+			GafferUI.BoolPlugValueWidget( { p["replaceDestination"] for p in self.getPlugs() } ),
+			verticalAlignment = GafferUI.Label.VerticalAlignment.Top,
+		)
 
-		self._updateFromPlug()
+		# Work around annoying Qt behaviour whereby QHBoxLayout expands vertically if all children
+		# have a vertical alignment. This appears to ultimately be the fault of `qSmartMaxSize` in
+		# `qlayoutengine.cpp`, which sets the maximum height to `QLAYOUTSIZE_MAX` when there is _any_
+		# vertical alignment flag set.
+		self.__row.append(
+			GafferUI.Spacer( imath.V2i( 0 ), maximumSize = imath.V2i( 0 ) ),
+			# Note : no `verticalAlignment` argument
+		)
 
-	def setPlug( self, plug ) :
+	def setPlugs( self, plugs ) :
 
-		GafferUI.PlugValueWidget.setPlug( self, plug )
+		GafferUI.PlugValueWidget.setPlugs( self, plugs )
 
-		self.__row[0].setPlug( plug["source"] )
-		self.__row[1].setPlug( plug["enabled"] )
-		self.__row[2].setPlug( plug["destination"] )
-		self.__row[3].setPlug( plug["deleteSource"] )
+		self.__row[0].setPlug( { p["source"] for p in self.getPlugs() } )
+		self.__row[1].setPlug( { p["enabled"] for p in self.getPlugs() } )
+		self.__row[2].setPlug( { p["destination"] for p in self.getPlugs() } )
+		self.__row[3].setPlug( { p["deleteSource"] for p in self.getPlugs() } )
+		self.__row[4].setPlug( { p["replaceDestination"] for p in self.getPlugs() } )
 
 	def hasLabel( self ) :
 
@@ -90,27 +114,20 @@ class ShufflePlugValueWidget( GafferUI.PlugValueWidget ) :
 	def childPlugValueWidget( self, childPlug ) :
 
 		for w in self.__row :
-			if w.getPlug().isSame( childPlug ) :
+			if childPlug in w.getPlugs() :
 				return w
 
 		return None
 
-	def setReadOnly( self, readOnly ) :
+	@staticmethod
+	def _valuesForUpdate( plugs, auxiliaryPlugs ) :
 
-		if readOnly == self.getReadOnly() :
-			return
+		return [ p["enabled"].getValue() for p in plugs ]
 
-		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
+	def _updateFromValues( self, values, exception ) :
 
-		for w in self.__row :
-			w.setReadOnly( readOnly )
-
-	def _updateFromPlug( self ) :
-
-		with self.getContext() :
-			enabled = self.getPlug()["enabled"].getValue()
-
-		for i in ( 0, 2, 3 ) :
+		enabled = all( values )
+		for i in ( 0, 2, 3, 4 ) :
 			self.__row[i].setEnabled( enabled )
 
 GafferUI.PlugValueWidget.registerType( Gaffer.ShufflePlug, ShufflePlugValueWidget )
@@ -124,11 +141,13 @@ Gaffer.Metadata.registerValue( Gaffer.ShufflePlug,
 	"destination",
 	"description",
 	"""
-	The name(s) of the destination data to be created. Use \"${source}\" to insert the name of the source data.\n
-	For example, to prefix all data with \"user:\" set the destination to \"user:${source}\").
+	The name of the destination data to be created. Use `${source}` to insert
+	the name of the source data. For example, to prepend `prefix:` set the
+	destination to `prefix:${source}`.
 	"""
 )
 Gaffer.Metadata.registerValue( Gaffer.ShufflePlug, "deleteSource", "description", "Enable to delete the source data after shuffling to the destination(s)." )
+Gaffer.Metadata.registerValue( Gaffer.ShufflePlug, "replaceDestination", "description", "Enable to replace already written destination data with the same name as destination(s)." )
 Gaffer.Metadata.registerValue( Gaffer.ShufflePlug, "enabled", "description", "Used to enable/disable this shuffle operation." )
 Gaffer.Metadata.registerValue( Gaffer.ShufflePlug, "nodule:type", "" )
 Gaffer.Metadata.registerValue( Gaffer.ShufflePlug, "*", "nodule:type", "" )
@@ -151,27 +170,23 @@ class ShufflesPlugValueWidget( GafferUI.PlugValueWidget ) :
 				GafferUI.Label( "<h4><b>Source</b></h4>" )._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
 				GafferUI.Spacer( imath.V2i( 25, 2 ) ) # approximate width of a BoolWidget Switch
 				GafferUI.Label( "<h4><b>Destination</b></h4>" )._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
-				GafferUI.Label( "<h4><b>Delete Source</b></h4>" )._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
+				GafferUI.Label( "<h4><b>Delete Source</b></h4>" )._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() - 40 )
+				GafferUI.Label( "<h4><b>Replace</b></h4>" )._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
 
 			self.__plugLayout = GafferUI.PlugLayout( plug )
 			self.__addButton = GafferUI.Button( image = "plus.png", hasFrame = False )
 
-		self.__addButton.clickedSignal().connect( Gaffer.WeakMethod( self.__addButtonClicked ), scoped = False )
+		self.__addButton.clickedSignal().connect( Gaffer.WeakMethod( self.__addButtonClicked ) )
 
 	def hasLabel( self ) :
 
 		return True
 
-	def setReadOnly( self, readOnly ) :
-
-		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
-		self.__plugLayout.setReadOnly( readOnly )
-
 	def childPlugValueWidget( self, childPlug ) :
 
 		return self.__plugLayout.plugValueWidget( childPlug )
 
-	def _updateFromPlug( self ) :
+	def _updateFromEditable( self ) :
 
 		self.__addButton.setEnabled( self._editable() )
 

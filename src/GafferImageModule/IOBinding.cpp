@@ -48,6 +48,10 @@
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
+#include "OpenColorIO/OpenColorIO.h"
+
+#include "boost/mpl/vector.hpp"
+
 using namespace std;
 using namespace boost::python;
 using namespace Gaffer;
@@ -65,15 +69,15 @@ struct DefaultColorSpaceFunction
 	{
 	}
 
-	string operator()( const std::string &fileName, const std::string &fileFormat, const std::string &dataType, const IECore::CompoundData *metadata )
+	string operator()( const std::string &fileName, const std::string &fileFormat, const std::string &dataType, const IECore::CompoundData *metadata, const OCIO_NAMESPACE::ConstConfigRcPtr &config )
 	{
 
 		IECorePython::ScopedGILLock gilock;
 		try
 		{
-			return extract<string>( m_fn( fileName, fileFormat, dataType, IECore::CompoundDataPtr( const_cast<IECore::CompoundData *>( metadata ) ) ) );
+			return extract<string>( m_fn( fileName, fileFormat, dataType, IECore::CompoundDataPtr( const_cast<IECore::CompoundData *>( metadata ) ), config ) );
 		}
-		catch( const error_already_set &e )
+		catch( const error_already_set & )
 		{
 			IECorePython::ExceptionAlgo::translatePythonException();
 		}
@@ -96,7 +100,7 @@ object getDefaultColorSpaceFunction()
 	return make_function(
 		T::getDefaultColorSpaceFunction(),
 		default_call_policies(),
-		boost::mpl::vector<string, const string &, const string &, const string &, const IECore::CompoundData *>()
+		boost::mpl::vector<string, const string &, const string &, const string &, const IECore::CompoundData *, const OCIO_NAMESPACE::ConstConfigRcPtr &>()
 	);
 }
 
@@ -126,6 +130,10 @@ void GafferImageModule::bindIO()
 
 	{
 		scope s = GafferBindings::DependencyNodeClass<OpenImageIOReader>()
+			.def( "setOpenFilesLimit", &OpenImageIOReader::setOpenFilesLimit )
+			.staticmethod( "setOpenFilesLimit" )
+			.def( "getOpenFilesLimit", &OpenImageIOReader::getOpenFilesLimit )
+			.staticmethod( "getOpenFilesLimit" )
 			.def( "supportedExtensions", &supportedExtensions<OpenImageIOReader> )
 			.staticmethod( "supportedExtensions" )
 		;
@@ -159,10 +167,16 @@ void GafferImageModule::bindIO()
 			.value( "BlackOutside", ImageReader::BlackOutside )
 			.value( "ClampToFrame", ImageReader::ClampToFrame )
 		;
+
+		enum_<ImageReader::ChannelInterpretation>( "ChannelInterpretation" )
+			.value( "Legacy", ImageReader::ChannelInterpretation::Legacy )
+			.value( "Default", ImageReader::ChannelInterpretation::Default )
+			.value( "Specification", ImageReader::ChannelInterpretation::Specification )
+		;
 	}
 
 	{
-		typedef TaskNodeWrapper<ImageWriter> ImageWriterWrapper;
+		using ImageWriterWrapper = TaskNodeWrapper<ImageWriter>;
 
 		scope s = TaskNodeClass<ImageWriter, ImageWriterWrapper>()
 			.def( "currentFileFormat", &ImageWriter::currentFileFormat )

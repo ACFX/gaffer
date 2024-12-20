@@ -248,26 +248,6 @@ class NodeTest( GafferTest.TestCase ) :
 
 		self.assertRaises( RuntimeError, n1["in"].setInput, n2["out"] )
 
-	def testPlugFlagsChangedSignal( self ) :
-
-		n = Gaffer.Node()
-		n["p"] = Gaffer.Plug()
-
-		cs = GafferTest.CapturingSlot( n.plugFlagsChangedSignal() )
-		self.assertEqual( len( cs ), 0 )
-
-		n["p"].setFlags( Gaffer.Plug.Flags.Dynamic, True )
-		self.assertEqual( len( cs ), 1 )
-		self.assertTrue( cs[0][0].isSame( n["p"] ) )
-
-		# second time should have no effect because they're the same
-		n["p"].setFlags( Gaffer.Plug.Flags.Dynamic, True )
-		self.assertEqual( len( cs ), 1 )
-
-		n["p"].setFlags( Gaffer.Plug.Flags.Dynamic, False )
-		self.assertEqual( len( cs ), 2 )
-		self.assertTrue( cs[1][0].isSame( n["p"] ) )
-
 	def testUserPlugs( self ) :
 
 		s = Gaffer.ScriptNode()
@@ -407,6 +387,27 @@ class NodeTest( GafferTest.TestCase ) :
 			list( GafferTest.AddNode.RecursiveRange( n ) ),
 			[ n["a"], n["c"], n["d"]["e"] ],
 		)
+
+	def testErrorSignal( self ) :
+
+		node = GafferTest.BadNode()
+
+		def badSlot( plug, sourcePlug, error ) :
+
+			raise RuntimeError( "Bad slot" )
+
+		node.errorSignal().connect( badSlot )
+		cs = GafferTest.CapturingSlot( node.errorSignal() )
+
+		with IECore.CapturingMessageHandler() as mh :
+			with self.assertRaisesRegex( RuntimeError, "Compute did not set plug value" ) :
+				node["out3"].getValue()
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertEqual( mh.messages[0].context, "Emitting signal" )
+		self.assertIn( "Bad slot", mh.messages[0].message )
+		self.assertEqual( len( cs ), 1 )
 
 if __name__ == "__main__" :
 	unittest.main()

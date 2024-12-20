@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_GROUP_H
-#define GAFFERSCENE_GROUP_H
+#pragma once
 
 #include "GafferScene/SceneProcessor.h"
 
@@ -56,10 +55,10 @@ class GAFFERSCENE_API Group : public SceneProcessor
 
 	public :
 
-		Group( const std::string &name=defaultName<Group>() );
+		explicit Group( const std::string &name=defaultName<Group>() );
 		~Group() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Group, GroupTypeId, SceneProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Group, GroupTypeId, SceneProcessor );
 
 		/// \deprecated. Use inPlugs() instead.
 		ScenePlug *nextInPlug();
@@ -67,6 +66,9 @@ class GAFFERSCENE_API Group : public SceneProcessor
 
 		Gaffer::StringPlug *namePlug();
 		const Gaffer::StringPlug *namePlug() const;
+
+		Gaffer::StringPlug *setsPlug();
+		const Gaffer::StringPlug *setsPlug() const;
 
 		Gaffer::TransformPlug *transformPlug();
 		const Gaffer::TransformPlug *transformPlug() const;
@@ -107,5 +109,3 @@ class GAFFERSCENE_API Group : public SceneProcessor
 IE_CORE_DECLAREPTR( Group )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_GROUP_H

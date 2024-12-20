@@ -36,6 +36,7 @@
 ##########################################################################
 
 import os
+import pathlib
 import inspect
 import unittest
 
@@ -120,10 +121,10 @@ class StringPlugTest( GafferTest.TestCase ) :
 		n = GafferTest.StringInOutNode()
 
 		n["in"].setValue( "~" )
-		self.assertEqual( n["out"].getValue(), os.path.expanduser( "~" ) )
+		self.assertEqual( n["out"].getValue(), os.path.expandvars( "$HOME" ) )
 
 		n["in"].setValue( "~/something.tif" )
-		self.assertEqual( n["out"].getValue(), os.path.expanduser( "~/something.tif" ) )
+		self.assertEqual( n["out"].getValue(), os.path.expandvars( "$HOME/something.tif" ) )
 
 		# ~ shouldn't be expanded unless it's at the front - it would
 		# be meaningless in other cases.
@@ -212,7 +213,7 @@ class StringPlugTest( GafferTest.TestCase ) :
 	def testLoadSubstitutionsVersion0_56( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( os.path.join( os.path.dirname( __file__ ), "scripts", "stringPlugSubstitutions-0.56.0.0.gfr" ) )
+		s["fileName"].setValue( pathlib.Path( __file__ ).parent / "scripts" / "stringPlugSubstitutions-0.56.0.0.gfr" )
 		s.load()
 
 		self.assertEqual( s["n"]["user"]["p"].substitutions(), IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.FrameSubstitutions )
@@ -220,7 +221,7 @@ class StringPlugTest( GafferTest.TestCase ) :
 	def testLoadSubstitutionsVersion0_55( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( os.path.join( os.path.dirname( __file__ ), "scripts", "stringPlugSubstitutions-0.55.4.0.gfr" ) )
+		s["fileName"].setValue( pathlib.Path( __file__ ).parent / "scripts" / "stringPlugSubstitutions-0.55.4.0.gfr" )
 		s.load()
 
 		self.assertEqual( s["n"]["user"]["p"].substitutions(), IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.FrameSubstitutions )
@@ -303,13 +304,11 @@ class StringPlugTest( GafferTest.TestCase ) :
 
 			self.assertEqual( s["substitionsOn"]["out"].getValue(), "test.1.exr" )
 			substitutionsOnHash1 = s["substitionsOn"]["out"].hash()
-			self.assertEqual( s["substitionsOn"]["out"].getValue( _precomputedHash = substitutionsOnHash1 ), "test.1.exr" )
 
 			# We should get sequences out of the non-substituting node.
 
 			self.assertEqual( s["substitionsOff"]["out"].getValue(), "test.#.exr" )
 			substitutionsOffHash1 = s["substitionsOff"]["out"].hash()
-			self.assertEqual( s["substitionsOff"]["out"].getValue( _precomputedHash = substitutionsOffHash1 ), "test.#.exr" )
 			self.assertNotEqual( substitutionsOnHash1, substitutionsOffHash1 )
 
 			# We shouldn't get frame numbers out of the third node, because the
@@ -319,7 +318,6 @@ class StringPlugTest( GafferTest.TestCase ) :
 
 			self.assertEqual( s["substitionsOnIndirectly"]["out"].getValue(), "test.#.exr" )
 			substitionsOnIndirectlyHash1 = s["substitionsOnIndirectly"]["out"].hash()
-			self.assertEqual( s["substitionsOnIndirectly"]["out"].getValue( _precomputedHash = substitionsOnIndirectlyHash1 ), "test.#.exr" )
 
 			# Frame 2
 			#########
@@ -338,7 +336,6 @@ class StringPlugTest( GafferTest.TestCase ) :
 
 			self.assertEqual( s["substitionsOn"]["out"].getValue(), "test.2.exr" )
 			substitutionsOnHash2 = s["substitionsOn"]["out"].hash()
-			self.assertEqual( s["substitionsOn"]["out"].getValue( _precomputedHash = substitutionsOnHash2 ), "test.2.exr" )
 			self.assertNotEqual( substitutionsOnHash2, substitutionsOnHash1 )
 
 			# We should still get sequences out of the non-substituting node,
@@ -346,7 +343,6 @@ class StringPlugTest( GafferTest.TestCase ) :
 
 			self.assertEqual( s["substitionsOff"]["out"].getValue(), "test.#.exr" )
 			substitutionsOffHash2 = s["substitionsOff"]["out"].hash()
-			self.assertEqual( s["substitionsOff"]["out"].getValue( _precomputedHash = substitutionsOffHash2 ), "test.#.exr" )
 			self.assertEqual( substitutionsOffHash1, substitutionsOffHash2 )
 			self.assertNotEqual( substitutionsOnHash2, substitutionsOffHash2 )
 
@@ -354,8 +350,99 @@ class StringPlugTest( GafferTest.TestCase ) :
 
 			self.assertEqual( s["substitionsOnIndirectly"]["out"].getValue(), "test.#.exr" )
 			substitionsOnIndirectlyHash2 = s["substitionsOnIndirectly"]["out"].hash()
-			self.assertEqual( s["substitionsOnIndirectly"]["out"].getValue( _precomputedHash = substitionsOnIndirectlyHash2 ), "test.#.exr" )
 			self.assertEqual( substitionsOnIndirectlyHash2, substitionsOnIndirectlyHash1 )
+
+	def testHashUsesValue( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["node"] = GafferTest.StringInOutNode()
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression(
+			"""parent["node"]["in"] = str( min( context.getFrame(), 10.0 ) )"""
+		)
+
+		hashes = {}
+		with Gaffer.Context() as context :
+			for i in range( 0, 20 ) :
+				context.setFrame( i )
+				hashes[i] = str( script["node"]["in"].hash() )
+
+		self.assertEqual( len( set( hashes.values() ) ), 11 )
+		for i in range( 10, 20 ) :
+			self.assertEqual( hashes[i], hashes[10] )
+
+	def testStringVectorDataInput( self ) :
+
+		node = Gaffer.ComputeNode()
+		node["user"]["string"] = Gaffer.StringPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		node["user"]["stringVector"] = Gaffer.StringVectorDataPlug( defaultValue = IECore.StringVectorData(), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		self.assertTrue( node["user"]["string"].acceptsInput( node["user"]["stringVector"] ) )
+		node["user"]["string"].setInput( node["user"]["stringVector"] )
+
+		hashes = set()
+		for input, output in [
+			( [], "", ),
+			( [ "test" ], "test" ),
+			( [ "a", "b", "c" ], "a b c" ),
+			( [ "dog", "cat" ], "dog cat" ),
+			( [ "a", "b", "", "c" ], "a b  c" ),
+		] :
+
+			node["user"]["stringVector"].setValue( IECore.StringVectorData( input ) )
+
+			h = node["user"]["string"].hash()
+			self.assertNotIn( h, hashes )
+			hashes.add( h )
+
+			self.assertEqual( node["user"]["string"].getValue(), output )
+
+	def testStringVectorDataConversionCachedOnce( self ) :
+
+		# StringVectorDataPlug driving StringPlug, with a variable
+		# substitution in the value.
+
+		node = Gaffer.ComputeNode()
+		node["user"]["string"] = Gaffer.StringPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		node["user"]["stringVector"] = Gaffer.StringVectorDataPlug( defaultValue = IECore.StringVectorData( [ "${test}" ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		node["user"]["string"].setInput( node["user"]["stringVector"] )
+
+		# The conversion from StringVectorData to StringData is performed once and
+		# cached. It doesn't depend on the context because the variable substitutions
+		# are performed later in `StringPlug.getValue()`. Assert this by checking that
+		# cache memory usage doesn't grow after the first call.
+		cacheUsage = None
+		hashes = set()
+		with Gaffer.Context() as context :
+			for v in [ "cat", "dog", "fish" ] :
+				context["test"] = v
+				node["user"]["string"].getValue()
+				if cacheUsage is None :
+					cacheUsage = Gaffer.ValuePlug.cacheMemoryUsage()
+				else :
+					self.assertEqual( Gaffer.ValuePlug.cacheMemoryUsage(), cacheUsage )
+				hashes.add( node["user"]["string"].hash() )
+
+		# We do expect a different result from `StringPlug.hash()` for each context though,
+		# because the hash accounts for the substitutions.
+		self.assertEqual( len( hashes ), 3 )
+
+	def testSetValueFromPath( self ) :
+
+		p = Gaffer.StringPlug()
+
+		# Setting from a string, slashes are preserved exactly.
+		p.setValue( r"/\/" )
+		self.assertEqual( p.getValue(), r"/\/" )
+
+		# Setting from a path, we convert to generic format internally.
+		p.setValue( pathlib.Path.cwd() )
+		self.assertEqual( p.getValue(), pathlib.Path.cwd().as_posix() )
+
+	def testValueType( self ) :
+
+		self.assertIs( Gaffer.StringPlug.ValueType, str )
 
 if __name__ == "__main__":
 	unittest.main()

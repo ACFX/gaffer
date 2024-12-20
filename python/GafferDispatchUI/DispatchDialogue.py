@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+import enum
 import functools
 import sys
 import threading
@@ -54,7 +55,7 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 	# Close : The dialogue is closed immediately.
 	#
 	# Confirm : The dialogue remains open confirming success, with a button for returning to the editing state.
-	PostDispatchBehaviour = IECore.Enum.create( "Close", "Confirm" )
+	PostDispatchBehaviour = enum.Enum( "PostDispatchBehaviour", [ "Close", "Confirm" ] )
 
 	__dispatchDialogueMenuDefinition = None
 
@@ -75,6 +76,12 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 
 		self.__postDispatchBehaviour = postDispatchBehaviour
 
+		# Hide bits of the dispatcher UIs that don't make sense in this context.
+		for dispatcher in self.__dispatchers :
+			Gaffer.Metadata.registerValue( dispatcher, "layout:customWidget:dispatchButton:visibilityActivator", False )
+			Gaffer.Metadata.registerValue( dispatcher["dispatcher"], "layout:visibilityActivator", False )
+			Gaffer.Metadata.registerValue( dispatcher["user"], "layout:visibilityActivator", False )
+
 		# build tabs for all the node, dispatcher, and context settings
 		with GafferUI.ListContainer() as self.__settings :
 
@@ -88,6 +95,8 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 					nodeFrame.addChild( self.__nodeEditor( node ) )
 					# remove the per-node execute button
 					Gaffer.Metadata.registerValue( node, "layout:customWidget:dispatchButton:widgetType", "", persistent = False )
+					# remove the per-node widget to create a dispatcher
+					Gaffer.Metadata.registerValue( node, "layout:customWidget:dispatcherCreationWidget:widgetType", "", persistent = False )
 					self.__tabs.setLabel( nodeFrame, node.relativeName( self.__script ) )
 
 				with GafferUI.ListContainer() as dispatcherTab :
@@ -97,7 +106,7 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 						self.__dispatchersMenu = GafferUI.MultiSelectionMenu( allowMultipleSelection = False, allowEmptySelection = False )
 						self.__dispatchersMenu.append( [ x.getName() for x in self.__dispatchers ] )
 						self.__dispatchersMenu.setSelection( [ self.__dispatchers[0].getName() ] )
-						self.__dispatchersMenuChanged = self.__dispatchersMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__dispatcherChanged ) )
+						self.__dispatchersMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__dispatcherChanged ) )
 						dispatcherMenuColumn.setVisible( len(self.__dispatchers) > 1 )
 
 					self.__dispatcherFrame = GafferUI.Frame( borderStyle=GafferUI.Frame.BorderStyle.None_, borderWidth=0 )
@@ -115,13 +124,13 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 				self.__progressLabel = GafferUI.Label( parenting = { "horizontalAlignment" : GafferUI.HorizontalAlignment.Center } )
 
 			with GafferUI.Collapsible( "Details", collapsed = True, parenting = { "expand" : True } ) as self.__messageCollapsible :
-				self.__messageWidget = GafferUI.MessageWidget()
+				self.__messageWidget = GafferUI.MessageWidget( toolbars = True )
 				# connect to the collapsible state change so we can increase the window
 				# size when the details pane is first shown.
-				self.__messageCollapsibleConneciton = self.__messageCollapsible.stateChangedSignal().connect( Gaffer.WeakMethod( self.__messageCollapsibleChanged ) )
+				self.__messageCollapsibleConnection = self.__messageCollapsible.stateChangedSignal().connect( Gaffer.WeakMethod( self.__messageCollapsibleChanged ) )
 
 		self.__backButton = self._addButton( "Back" )
-		self.__backButtonConnection = self.__backButton.clickedSignal().connect( 0, Gaffer.WeakMethod( self.__initiateSettings ) )
+		self.__backButton.clickedSignal().connectFront( Gaffer.WeakMethod( self.__initiateSettings ) )
 
 		self.__primaryButton = self._addButton( "Dispatch" )
 
@@ -200,7 +209,7 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 		self.__primaryButton.setText( "Dispatch" )
 		self.__primaryButton.setEnabled( True )
 		self.__primaryButton.setVisible( True )
-		self.__primaryButtonConnection = self.__primaryButton.clickedSignal().connect( 0, Gaffer.WeakMethod( self.__initiateDispatch ) )
+		self.__primaryButtonConnection = self.__primaryButton.clickedSignal().connectFront( Gaffer.WeakMethod( self.__initiateDispatch ), scoped = True )
 
 		self.__tabs.setCurrent( self.__tabs[0] )
 		self._getWidget().setChild( self.__settings )
@@ -258,9 +267,8 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 			"".join( traceback.format_exception( *exceptionInfo ) )
 		)
 
-		# this works for RuntimeError, but is this safe for all exceptions?
 		excType, excValue, excTrace = exceptionInfo
-		if excValue and excValue.message:
+		if excValue and hasattr( excValue, "message" ) and excValue.message :
 			userFriendlyException = excValue.message.strip( "\n" ).split( "\n" )[-1]
 		else:
 			userFriendlyException = str( excType.__name__ )
@@ -278,7 +286,7 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 		self.__primaryButton.setText( "Quit" )
 		self.__primaryButton.setEnabled( True )
 		self.__primaryButton.setVisible( True )
-		self.__primaryButtonConnection = self.__primaryButton.clickedSignal().connect( Gaffer.WeakMethod( self.__close ) )
+		self.__primaryButtonConnection = self.__primaryButton.clickedSignal().connect( Gaffer.WeakMethod( self.__close ), scoped = True )
 
 	def __initiateResultDisplay( self ) :
 
@@ -310,10 +318,10 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 		self.__backButton.setEnabled( True )
 		self.__backButton.setVisible( True )
 
-		self.__primaryButton.setText( "Ok" )
+		self.__primaryButton.setText( "Close" )
 		self.__primaryButton.setEnabled( True )
 		self.__primaryButton.setVisible( True )
-		self.__primaryButtonConnection = self.__primaryButton.clickedSignal().connect( Gaffer.WeakMethod( self.__close ) )
+		self.__primaryButtonConnection = self.__primaryButton.clickedSignal().connect( Gaffer.WeakMethod( self.__close ), scoped = True )
 		self.__primaryButton._qtWidget().setFocus()
 
 	def __close( self, *unused ) :
@@ -329,4 +337,4 @@ class DispatchDialogue( GafferUI.Dialogue ) :
 			# remove our connection - we only want to resize the first time we
 			# show the messages. after this we assume that if the window is smaller
 			# it is because the user has made it so, and wishes it to remain so.
-			self.__messageCollapsibleConneciton = None
+			self.__messageCollapsibleConnection.disconnect()

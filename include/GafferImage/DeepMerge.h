@@ -35,8 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_DEEPMERGE_H
-#define GAFFERIMAGE_DEEPMERGE_H
+#pragma once
 
 #include "GafferImage/ImageProcessor.h"
 
@@ -51,10 +50,10 @@ class GAFFERIMAGE_API DeepMerge : public ImageProcessor
 
 	public :
 
-		DeepMerge( const std::string &name=defaultName<DeepMerge>() );
+		explicit DeepMerge( const std::string &name=defaultName<DeepMerge>() );
 		~DeepMerge() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::DeepMerge, DeepMergeTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::DeepMerge, DeepMergeTypeId, ImageProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -88,5 +87,3 @@ class GAFFERIMAGE_API DeepMerge : public ImageProcessor
 IE_CORE_DECLAREPTR( DeepMerge )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_DEEPMERGE_H

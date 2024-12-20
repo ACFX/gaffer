@@ -56,12 +56,14 @@
 
 #include "boost/algorithm/string/predicate.hpp"
 
+#include "fmt/format.h"
+
 using namespace std;
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( OpenGLShader );
+GAFFER_NODE_DEFINE_TYPE( OpenGLShader );
 
 namespace
 {
@@ -167,19 +169,13 @@ void OpenGLShader::loadShader( const std::string &shaderName, bool keepExistingV
 				plug = existingType != (IECore::TypeId)Color4fPlugTypeId ? new Color4fPlug( *it ) : nullptr;
 				break;
 			case GL_SAMPLER_2D :
-				/// \todo This introduces a GafferImage dependency into GafferScene,
-				/// which I'm not sure is ideal. We could work around this by using
-				/// ObjectPlug and using an ImageToObject node to do the conversion,
-				/// but that might be a bit annoying for users. Keeping the dependency
-				/// might turn out to be useful for other nodes (Seeds perhaps?), so
-				/// revisit this at some point to see how things are working out.
 				plug = existingType != (IECore::TypeId)GafferImage::ImagePlugTypeId ? new GafferImage::ImagePlug( *it ) : nullptr;
 				break;
 			default :
 				msg(
 					Msg::Warning,
 					"OpenGLShader::loadShader",
-					boost::format( "Parameter \"%s\" has unsupported type" ) % *it
+					fmt::format( "Parameter \"{}\" has unsupported type", *it )
 				);
 		}
 		if( plug )

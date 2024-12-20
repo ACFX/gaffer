@@ -32,8 +32,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFEROSL_SHADINGENGINE_H
-#define GAFFEROSL_SHADINGENGINE_H
+#pragma once
 
 #include "GafferOSL/Export.h"
 #include "GafferOSL/TypeIds.h"
@@ -54,7 +53,11 @@ class GAFFEROSL_API ShadingEngine : public IECore::RefCounted
 
 		IE_CORE_DECLAREMEMBERPTR( ShadingEngine )
 
-		ShadingEngine( const IECoreScene::ShaderNetwork *shaderNetwork );
+		explicit ShadingEngine( const IECoreScene::ShaderNetwork *shaderNetwork );
+
+		// Fast version that takes ownership of network instead of copying
+		ShadingEngine( IECoreScene::ShaderNetworkPtr &&shaderNetwork );
+
 		~ShadingEngine() override;
 
 		struct Transform
@@ -79,7 +82,7 @@ class GAFFEROSL_API ShadingEngine : public IECore::RefCounted
 
 		};
 
-		typedef std::map<IECore::InternedString, Transform> Transforms;
+		using Transforms = std::map<IECore::InternedString, Transform>;
 
 		/// Append a unique hash representing this shading engine to `h`.
 		void hash( IECore::MurmurHash &h ) const;
@@ -97,7 +100,7 @@ class GAFFEROSL_API ShadingEngine : public IECore::RefCounted
 		bool m_timeNeeded;
 		std::vector<IECore::InternedString> m_contextVariablesNeeded;
 
-		typedef boost::container::flat_set<std::string> AttributesNeededContainer;
+		using AttributesNeededContainer = boost::container::flat_set<std::string>;
 		AttributesNeededContainer m_attributesNeeded;
 
 		// Set to true if the shader reads attributes who's name is not know at compile time
@@ -112,5 +115,3 @@ class GAFFEROSL_API ShadingEngine : public IECore::RefCounted
 IE_CORE_DECLAREPTR( ShadingEngine )
 
 } // namespace GafferOSL
-
-#endif // GAFFEROSL_SHADINGENGINE_H

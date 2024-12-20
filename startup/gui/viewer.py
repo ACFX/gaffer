@@ -59,23 +59,25 @@ Gaffer.Metadata.registerValue( preferences["viewer"], "layout:section", "Viewer"
 
 # register a customised view for viewing scenes
 
-def __sceneView( plug ) :
+def __sceneView( scriptNode ) :
 
-	view = GafferSceneUI.SceneView()
-	view["in"].setInput( plug )
+	view = GafferSceneUI.SceneView( scriptNode )
 	view["grid"]["dimensions"].setInput( preferences["viewer"]["gridDimensions"] )
 
 	return view
 
 GafferUI.View.registerView( GafferScene.ScenePlug.staticTypeId(), __sceneView )
 
+Gaffer.Metadata.registerValue( GafferSceneUI.SceneView, "drawingMode.includedPurposes.value", "userDefault", IECore.StringVectorData( [ "default", "proxy" ] ) )
+
 # Add items to the viewer's right click menu
 
 def __viewContextMenu( viewer, view, menuDefinition ) :
 
+	GafferSceneUI.LightUI.appendViewContextMenuItems( viewer, view, menuDefinition )
 	GafferSceneUI.SceneHistoryUI.appendViewContextMenuItems( viewer, view, menuDefinition )
 
-GafferUI.Viewer.viewContextMenuSignal().connect( __viewContextMenu, scoped = False )
+GafferUI.Viewer.viewContextMenuSignal().connect( __viewContextMenu )
 
 # register shading modes
 
@@ -134,7 +136,71 @@ def __createXRayShader() :
 
 	return xray
 
-GafferSceneUI.SceneView.registerShadingMode( "X-Ray", functools.partial( __createXRayShader ) )
+GafferSceneUI.SceneView.registerShadingMode( "X-Ray", __createXRayShader )
+
+def __createPurposeShadingMode() :
+
+	result = GafferScene.SceneProcessor( "PurposeVisualiser" )
+
+	result["attributeQuery"] = GafferScene.AttributeQuery()
+	result["attributeQuery"].setup( Gaffer.StringPlug() )
+	result["attributeQuery"]["scene"].setInput( result["in"] )
+	result["attributeQuery"]["location"].setValue( "${scene:path}" )
+	result["attributeQuery"]["attribute"].setValue( "usd:purpose" )
+	result["attributeQuery"]["default"].setValue( "default" )
+	result["attributeQuery"]["inherit"].setValue( True )
+
+	result["customAttributes"] = GafferScene.CustomAttributes()
+	result["customAttributes"]["in"].setInput( result["in"] )
+
+	result["spreadsheet"] = Gaffer.Spreadsheet()
+	result["spreadsheet"]["selector"].setInput( result["attributeQuery"]["value"] )
+	result["spreadsheet"]["rows"].addColumn( result["customAttributes"]["extraAttributes"] )
+
+	result["customAttributes"]["extraAttributes"].setInput( result["spreadsheet"]["out"]["extraAttributes"] )
+
+	for purpose, color in {
+		"render" : imath.Color3f( 0, 1, 0 ),
+		"proxy" : imath.Color3f( 0, 0, 1 ),
+		"guide" : imath.Color3f( 1, 0, 0 ),
+		"default" : imath.Color3f( 1, 1, 1 )
+	}.items() :
+		row = result["spreadsheet"]["rows"].addRow()
+		row["name"].setValue( purpose )
+		row["cells"]["extraAttributes"]["value"].setValue(
+			IECore.CompoundObject( {
+				"gl:surface" : IECoreScene.ShaderNetwork(
+					shaders = {
+						"surface" : IECoreScene.Shader(
+							"FacingRatio", "gl:surface",
+							{ "facingColor" : color },
+						)
+					},
+					output = "surface",
+				)
+			} )
+		)
+
+	result["out"].setInput( result["customAttributes"]["out"] )
+
+	return result
+
+GafferSceneUI.SceneView.registerShadingMode( "Diagnostic/USD/Purpose", __createPurposeShadingMode )
+
+def __loadRendererSettings( fileName ) :
+
+	script = Gaffer.ScriptNode()
+	script["fileName"].setValue( fileName )
+	script.load()
+
+	script["Processor"] = GafferScene.SceneProcessor()
+	script.execute( script.serialise( parent = script["ViewerSettings"] ), parent = script["Processor"] )
+	script["Processor"]["BoxIn"]["__in"].setInput( script["Processor"]["in"] )
+	script["Processor"]["out"].setInput( script["Processor"]["BoxOut"]["__out"] )
+	for plug in Gaffer.ValuePlug.InputRange( script["Processor"] ) :
+		plug.setToDefault()
+
+	return script["Processor"]
 
 with IECore.IgnoredExceptions( ImportError ) :
 
@@ -156,6 +222,11 @@ with IECore.IgnoredExceptions( ImportError ) :
 
 	] )
 
+	GafferSceneUI.SceneView.registerRenderer(
+		"Arnold",
+		functools.partial( __loadRendererSettings, os.path.join( os.path.dirname( __file__ ), "arnoldViewerSettings.gfr" ) )
+	)
+
 with IECore.IgnoredExceptions( ImportError ) :
 
 	import GafferDelight
@@ -173,25 +244,23 @@ with IECore.IgnoredExceptions( ImportError ) :
 
 	] )
 
-if os.environ.get( "GAFFERAPPLESEED_HIDE_UI", "" ) != "1" :
+	GafferSceneUI.SceneView.registerRenderer(
+		"3Delight",
+		functools.partial( __loadRendererSettings, os.path.join( os.path.dirname( __file__ ), "3delightViewerSettings.gfr" ) )
+	)
+
+if os.environ.get( "CYCLES_ROOT" ) and os.environ.get( "GAFFERCYCLES_HIDE_UI", "" ) != "1" :
 
 	with IECore.IgnoredExceptions( ImportError ) :
 
-		import GafferAppleseed
+		import GafferCycles
 
-		__registerShadingModes( [
-
-			( "Diagnostic/Appleseed/Shader Assignment", GafferScene.AttributeVisualiser, { "attributeName" : "osl:surface", "mode" : GafferScene.AttributeVisualiser.Mode.ShaderNodeColor } ),
-			( "Diagnostic/Appleseed/Camera Visibility", GafferScene.AttributeVisualiser, { "attributeName" : "as:visibility:camera" } ),
-			( "Diagnostic/Appleseed/Shadow Visibility", GafferScene.AttributeVisualiser, { "attributeName" : "as:visibility:shadow" } ),
-			( "Diagnostic/Appleseed/Diffuse Visibility", GafferScene.AttributeVisualiser, { "attributeName" : "as:visibility:diffuse" } ),
-			( "Diagnostic/Appleseed/Specular Visibility", GafferScene.AttributeVisualiser, { "attributeName" : "as:visibility:specular" } ),
-			( "Diagnostic/Appleseed/Glossy Visibility", GafferScene.AttributeVisualiser, { "attributeName" : "as:visibility:glossy" } ),
-			( "Diagnostic/Appleseed/Photon Visibility", GafferScene.AttributeVisualiser, { "attributeName" : "as:visibility:light" } ),
-
-		] )
-
+		GafferSceneUI.SceneView.registerRenderer(
+			"Cycles",
+			functools.partial( __loadRendererSettings, os.path.join( os.path.dirname( __file__ ), "cyclesViewerSettings.gfr" ) )
+		)
 
 # Add catalogue hotkeys to viewers, eg: up/down navigation
-GafferUI.Editor.instanceCreatedSignal().connect( GafferImageUI.CatalogueUI.addCatalogueHotkeys, scoped = False )
-GafferUI.Editor.instanceCreatedSignal().connect( GafferSceneUI.EditScopeUI.addPruningActions, scoped = False )
+GafferUI.Editor.instanceCreatedSignal().connect( GafferImageUI.CatalogueUI.addCatalogueHotkeys )
+GafferUI.Editor.instanceCreatedSignal().connect( GafferSceneUI.EditScopeUI.addPruningActions )
+GafferUI.Editor.instanceCreatedSignal().connect( GafferSceneUI.EditScopeUI.addVisibilityActions )

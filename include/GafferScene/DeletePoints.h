@@ -35,8 +35,7 @@
 /////////////////////////////////////////////////////////////////////////
 
 
-#ifndef GAFFERSCENE_DELETEPOINTS_H
-#define GAFFERSCENE_DELETEPOINTS_H
+#pragma once
 
 #include "GafferScene/Deformer.h"
 
@@ -55,16 +54,38 @@ class GAFFERSCENE_API DeletePoints : public Deformer
 
 	public :
 
-		DeletePoints( const std::string &name = defaultName<DeletePoints>() );
+		enum class SelectionMode
+		{
+			VertexPrimitiveVariable,
+			IdListPrimitiveVariable,
+			IdList
+		};
+
+		explicit DeletePoints( const std::string &name = defaultName<DeletePoints>() );
 		~DeletePoints() override;
+
+		Gaffer::IntPlug *selectionModePlug();
+		const Gaffer::IntPlug *selectionModePlug() const;
 
 		Gaffer::StringPlug *pointsPlug();
 		const Gaffer::StringPlug *pointsPlug() const;
 
+		Gaffer::StringPlug *idListVariablePlug();
+		const Gaffer::StringPlug *idListVariablePlug() const;
+
+		Gaffer::Int64VectorDataPlug *idListPlug();
+		const Gaffer::Int64VectorDataPlug *idListPlug() const;
+
+		Gaffer::StringPlug *idPlug();
+		const Gaffer::StringPlug *idPlug() const;
+
 		Gaffer::BoolPlug *invertPlug();
 		const Gaffer::BoolPlug *invertPlug() const;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::DeletePoints, DeletePointsTypeId, Deformer );
+		Gaffer::BoolPlug *ignoreMissingVariablePlug();
+		const Gaffer::BoolPlug *ignoreMissingVariablePlug() const;
+
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::DeletePoints, DeletePointsTypeId, Deformer );
 
 	protected :
 
@@ -81,6 +102,3 @@ class GAFFERSCENE_API DeletePoints : public Deformer
 IE_CORE_DECLAREPTR( DeletePoints )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_DELETEPOINTS_H
-

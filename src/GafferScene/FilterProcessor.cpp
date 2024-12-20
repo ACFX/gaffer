@@ -44,7 +44,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( FilterProcessor );
+GAFFER_NODE_DEFINE_TYPE( FilterProcessor );
 
 size_t FilterProcessor::g_firstPlugIndex = 0;
 
@@ -112,7 +112,7 @@ void FilterProcessor::affects( const Gaffer::Plug *input, AffectedPlugsContainer
 	{
 		if( const ArrayPlug *arrayIn = this->inPlugs() )
 		{
-			for( InputFilterPlugIterator it( arrayIn ); !it.done(); ++it )
+			for( FilterPlug::InputIterator it( arrayIn ); !it.done(); ++it )
 			{
 				(*it)->sceneAffects( input, outputs );
 			}

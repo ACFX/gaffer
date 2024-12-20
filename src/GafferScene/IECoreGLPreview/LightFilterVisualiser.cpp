@@ -58,9 +58,9 @@ using namespace IECoreGLPreview;
 namespace
 {
 
-typedef std::pair<IECore::InternedString, IECore::InternedString> AttributeAndShaderNames;
+using AttributeAndShaderNames = std::pair<IECore::InternedString, IECore::InternedString>;
 
-typedef boost::container::flat_map<AttributeAndShaderNames, ConstLightFilterVisualiserPtr> LightFilterVisualisers;
+using LightFilterVisualisers = boost::container::flat_map<AttributeAndShaderNames, ConstLightFilterVisualiserPtr>;
 LightFilterVisualisers &lightFilterVisualisers()
 {
 	static LightFilterVisualisers l;
@@ -131,6 +131,12 @@ Visualisations LightFilterVisualiser::allVisualisations( const IECore::CompoundO
 		std::vector<std::string> tokens;
 		boost::split( tokens, attributeName, boost::is_any_of(":") );
 		const IECoreScene::ShaderNetwork *lightShaderNetwork = attributes->member<IECoreScene::ShaderNetwork>( tokens.front() + ":light" );
+
+		// If the light is a USD light, the renderer-specific `lightShaderNetwork` won't be valid
+		if( !lightShaderNetwork )
+		{
+			lightShaderNetwork = attributes->member<IECoreScene::ShaderNetwork>( "light" );
+		}
 
 		// It's possible that we found a light filter defined in world space
 		// that isn't assigned to a light just yet. If we found a filter in

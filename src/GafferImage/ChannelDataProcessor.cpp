@@ -44,7 +44,7 @@
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ChannelDataProcessor );
+GAFFER_NODE_DEFINE_TYPE( ChannelDataProcessor );
 
 size_t ChannelDataProcessor::g_firstPlugIndex = 0;
 
@@ -61,6 +61,7 @@ ChannelDataProcessor::ChannelDataProcessor( const std::string &name, bool hasUnp
 	}
 
 	// We don't ever want to change these, so we make pass-through connections.
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
@@ -141,22 +142,22 @@ void ChannelDataProcessor::hashChannelData( const GafferImage::ImagePlug *output
 	IECore::ConstStringVectorDataPtr channelNamesData;
 	bool unpremult = false;
 	bool repremultByProcessedAlpha = false;
-	if( m_hasUnpremultPlug && channelName != "A" )
+	if( m_hasUnpremultPlug && channelName != ImageAlgo::channelNameA )
 	{
 		ImagePlug::GlobalScope globalScope( context );
 		unpremult = processUnpremultipliedPlug()->getValue();
 		if( unpremult )
 		{
 			channelNamesData = inPlug()->channelNamesPlug()->getValue();
-			repremultByProcessedAlpha = channelEnabled( "A" );
+			repremultByProcessedAlpha = channelEnabled( ImageAlgo::channelNameA );
 		}
 	}
 
 	h.append( unpremult );
-	if( unpremult && ImageAlgo::channelExists( channelNamesData->readable(), "A" ) )
+	if( unpremult && ImageAlgo::channelExists( channelNamesData->readable(), ImageAlgo::channelNameA ) )
 	{
 		ImagePlug::ChannelDataScope s( context );
-		s.setChannelName( "A" );
+		s.setChannelName( &ImageAlgo::channelNameA );
 		inPlug()->channelDataPlug()->hash( h );
 		if( repremultByProcessedAlpha )
 		{
@@ -173,23 +174,23 @@ IECore::ConstFloatVectorDataPtr ChannelDataProcessor::computeChannelData( const 
 	IECore::ConstStringVectorDataPtr channelNamesData;
 	bool unpremult = false;
 	bool repremultByProcessedAlpha = false;
-	if( m_hasUnpremultPlug && channelName != "A" )
+	if( m_hasUnpremultPlug && channelName != ImageAlgo::channelNameA )
 	{
 		ImagePlug::GlobalScope globalScope( context );
 		unpremult = processUnpremultipliedPlug()->getValue();
 		if( unpremult )
 		{
 			channelNamesData = inPlug()->channelNamesPlug()->getValue();
-			repremultByProcessedAlpha = channelEnabled( "A" );
+			repremultByProcessedAlpha = channelEnabled( ImageAlgo::channelNameA );
 		}
 	}
 
 	IECore::ConstFloatVectorDataPtr alphaData;
 	IECore::ConstFloatVectorDataPtr postAlphaData;
-	if( unpremult && ImageAlgo::channelExists( channelNamesData->readable(), "A" ) )
+	if( unpremult && ImageAlgo::channelExists( channelNamesData->readable(), ImageAlgo::channelNameA ) )
 	{
 		ImagePlug::ChannelDataScope s( context );
-		s.setChannelName( "A" );
+		s.setChannelName( &ImageAlgo::channelNameA );
 		alphaData = inPlug()->channelDataPlug()->getValue();
 		if( repremultByProcessedAlpha )
 		{

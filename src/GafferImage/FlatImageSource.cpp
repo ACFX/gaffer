@@ -42,7 +42,7 @@
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( FlatImageSource );
+GAFFER_NODE_DEFINE_TYPE( FlatImageSource );
 
 FlatImageSource::FlatImageSource( const std::string &name )
 	:	ImageNode( name )
@@ -82,4 +82,14 @@ void FlatImageSource::hashSampleOffsets( const GafferImage::ImagePlug *parent, c
 IECore::ConstIntVectorDataPtr FlatImageSource::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return ImagePlug::flatTileSampleOffsets();
+}
+
+void FlatImageSource::hashViewNames( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashViewNames( parent, context, h );
+}
+
+IECore::ConstStringVectorDataPtr FlatImageSource::computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	return ImagePlug::defaultViewNames();
 }

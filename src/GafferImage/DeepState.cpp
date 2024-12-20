@@ -46,18 +46,18 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeepState );
+GAFFER_NODE_DEFINE_TYPE( DeepState );
 
 namespace
 {
 
-const static IECore::InternedString g_AName = "A";
-const static IECore::InternedString g_ZName = "Z";
-const static IECore::InternedString g_ZBackName = "ZBack";
-const static IECore::InternedString g_sampleOffsetsName = "sampleOffsets";
-const static IECore::InternedString g_contributionIdsName = "contributionIds";
-const static IECore::InternedString g_contributionWeightsName = "contributionWeights";
-const static IECore::InternedString g_contributionOffsetsName = "contributionOffsets";
+const IECore::InternedString g_AName = "A";
+const IECore::InternedString g_ZName = "Z";
+const IECore::InternedString g_ZBackName = "ZBack";
+const IECore::InternedString g_sampleOffsetsName = "sampleOffsets";
+const IECore::InternedString g_contributionIdsName = "contributionIds";
+const IECore::InternedString g_contributionWeightsName = "contributionWeights";
+const IECore::InternedString g_contributionOffsetsName = "contributionOffsets";
 
 // This class stores all information about how samples are merged together.
 // It is initialized just based on the sorted Z and ZBack channels ( and the sampleOffsets that
@@ -130,13 +130,29 @@ class SampleMerge
 
 				while( currentSampleId < offset )
 				{
-					// If we exactly match an existing open sample, we don't need to close anything
-					// ( This check avoids closing an open point sample when receiving another
-					// point sample at the same depth )
-					if( m_openSamples.size() && ! ( m_inZ[ m_openSamples.back() ] == m_inZ[currentSampleId] && m_inZBack[ m_openSamples.back() ] == m_inZBack[currentSampleId] ) )
+					const float currentSampleZ = m_inZ[currentSampleId];
+					const float currentSampleZBack = std::max( currentSampleZ, m_inZBack[currentSampleId] );
+
+					if( m_openSamples.size() )
 					{
-						closeOpenSamples( outputDepth, m_inZ[currentSampleId] );
-						outputDepth = m_inZ[currentSampleId];
+						const int lastOpen = m_openSamples.back();
+						// Check if we match the last already open sample, starting with Z
+						if( m_inZ[ lastOpen ] == currentSampleZ && (
+							// Now check if both ZBacks are valid and match
+							m_inZBack[ lastOpen ] == currentSampleZBack ||
+							// Or if neither ZBack is valid, and they are both treated as point samples
+							!( m_inZBack[ lastOpen ] > currentSampleZ || currentSampleZBack > currentSampleZ )
+						) )
+						{
+							// We exactly match an existing open sample, we don't need to close anything
+							// ( This check avoids closing an open point sample when receiving another
+							// point sample at the same depth )
+						}
+						else
+						{
+							closeOpenSamples( outputDepth, m_inZ[currentSampleId] );
+							outputDepth = m_inZ[currentSampleId];
+						}
 					}
 
 					if( m_openSamples.size() == 0 && ( currentSampleId + 1 == offset ||
@@ -150,8 +166,8 @@ class SampleMerge
 						// This does the same thing that that putting it in the open sample list and then
 						// closing it immediately would do, but is an optimization that saves ~15% of
 						// sampleMapping compute time when tidying data that is almost all already tidy
-						m_zOut.push_back( m_inZ[currentSampleId] );
-						m_zBackOut.push_back( m_inZBack[currentSampleId] );
+						m_zOut.push_back( currentSampleZ );
+						m_zBackOut.push_back( currentSampleZBack );
 						m_contributionIdsOut.push_back( currentSampleId );
 						m_contributionAmountsOut.push_back( 1.0 );
 						m_contributionOffsetsOut.push_back( m_contributionIdsOut.size() );
@@ -161,7 +177,7 @@ class SampleMerge
 						// This sample interacts with the previous or next sample, so we need to add it
 						// to the open sample list, so it can be merged appropriately
 						unsigned int insertionIndex = m_openSamples.size();
-						while( insertionIndex > 0 && m_inZBack[ m_openSamples[insertionIndex - 1] ] < m_inZBack[currentSampleId] )
+						while( insertionIndex > 0 && m_inZBack[ m_openSamples[insertionIndex - 1] ] < currentSampleZBack )
 						{
 							insertionIndex--;
 						}
@@ -170,7 +186,7 @@ class SampleMerge
 
 					currentSampleId++;
 				}
-				closeOpenSamples( outputDepth, numeric_limits<float>::max() );
+				closeOpenSamples( outputDepth, numeric_limits<float>::infinity() );
 				sampleOffsetsOut.push_back( m_contributionOffsetsOut.size() );
 			}
 		}
@@ -195,14 +211,14 @@ class SampleMerge
 
 		void closeOpenSamples( float currentDepth, const float closeUpToZ )
 		{
-			while( m_openSamples.size() && m_inZBack[ m_openSamples.back() ] <= closeUpToZ )
+			while( m_openSamples.size() && !( m_inZBack[ m_openSamples.back() ] > closeUpToZ ) )
 			{
-				const float closeBack = m_inZBack[ m_openSamples.back() ];
 				currentDepth = std::max( currentDepth, m_inZ[ m_openSamples.back() ] );
+				const float closeBack = std::max( currentDepth, m_inZBack[ m_openSamples.back() ] );
 
 				outputSample( currentDepth, closeBack );
 
-				while( m_openSamples.size() && m_inZBack[ m_openSamples.back() ] == closeBack )
+				while( m_openSamples.size() && !( m_inZBack[ m_openSamples.back() ] > closeBack ) )
 				{
 					m_openSamples.pop_back();
 				}
@@ -213,7 +229,7 @@ class SampleMerge
 			if( m_openSamples.size() )
 			{
 				currentDepth = std::max( currentDepth, m_inZ[ m_openSamples.back() ] );
-				if( currentDepth != closeUpToZ )
+				if( currentDepth < closeUpToZ )
 				{
 					outputSample( currentDepth, closeUpToZ );
 				}
@@ -223,13 +239,13 @@ class SampleMerge
 		void outputSample( float z, float zBack )
 		{
 			m_zOut.push_back( z );
-			m_zBackOut.push_back( zBack );
-			if( z == zBack )
+			m_zBackOut.push_back( std::max( z, zBack ) );
+			if( zBack <= z )
 			{
 				// Outputting a point sample, it will only contain contributions from matching point samples
 				for( int i = m_openSamples.size() - 1; i >= 0; i-- )
 				{
-					if( m_inZBack[ m_openSamples[i] ] != zBack )
+					if( m_inZBack[ m_openSamples[i] ] > z )
 					{
 						break;
 					}
@@ -241,7 +257,7 @@ class SampleMerge
 			{
 				for( const auto &i : m_openSamples )
 				{
-					const float amount = ( zBack - z ) / ( m_inZBack[i] - m_inZ[i] );
+					const float amount = std::min( 1.0f, ( zBack - z ) / ( m_inZBack[i] - m_inZ[i] ) );
 					m_contributionIdsOut.push_back( i );
 					m_contributionAmountsOut.push_back( amount );
 				}
@@ -756,11 +772,16 @@ void checkState( const std::vector<int> &offsets,
 
 		float z = zChannel[prevOffset];
 		float zBack = zBackChannel[prevOffset];
+		if( zBack < z )
+		{
+			isTidy = false;
+		}
+
 		for( int i = prevOffset + 1; i < offset; i++ )
 		{
 			float newZ = zChannel[i];
 			float newZBack = zBackChannel[i];
-			if( newZ < zBack )
+			if( newZ < zBack || newZBack < newZ )
 			{
 				isTidy = false;
 			}
@@ -818,6 +839,7 @@ DeepState::DeepState( const std::string &name )
 	addChild( new CompoundObjectPlug( "__sampleMapping", Gaffer::Plug::Out, new IECore::CompoundObject ) );
 
 	// We don't ever want to change these, so we make pass-through connections.
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
@@ -948,27 +970,27 @@ void DeepState::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *co
 	const std::vector<std::string> &channelNames = channelNamesData->readable();
 
 	ImagePlug::ChannelDataScope channelScope( context );
-	if( ImageAlgo::channelExists( channelNames, "Z" ) )
+	if( ImageAlgo::channelExists( channelNames, ImageAlgo::channelNameZ ) )
 	{
-		channelScope.setChannelName( "Z" );
+		channelScope.setChannelName( &ImageAlgo::channelNameZ );
 		inPlug()->channelDataPlug()->hash( h );
 	}
 	else
 	{
 		h.append( false );
 	}
-	if( ImageAlgo::channelExists( channelNames, "ZBack" ) )
+	if( ImageAlgo::channelExists( channelNames, ImageAlgo::channelNameZBack ) )
 	{
-		channelScope.setChannelName( "ZBack" );
+		channelScope.setChannelName( &ImageAlgo::channelNameZBack );
 		inPlug()->channelDataPlug()->hash( h );
 	}
 	else
 	{
 		h.append( false );
 	}
-	if( ImageAlgo::channelExists( channelNames, "A" ) )
+	if( ImageAlgo::channelExists( channelNames, ImageAlgo::channelNameA ) )
 	{
-		channelScope.setChannelName( "A" );
+		channelScope.setChannelName( &ImageAlgo::channelNameA );
 		inPlug()->channelDataPlug()->hash( h );
 	}
 	else
@@ -1008,20 +1030,20 @@ void DeepState::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 	CompoundObjectPtr result = new CompoundObject;
 
 	ImagePlug::ChannelDataScope channelScope( Context::current() );
-	bool hasZ = ImageAlgo::channelExists( channelNames, "Z" );
+	bool hasZ = ImageAlgo::channelExists( channelNames, ImageAlgo::channelNameZ );
 
 	ConstFloatVectorDataPtr zData;
 	if( hasZ )
 	{
-		channelScope.setChannelName( "Z" );
+		channelScope.setChannelName( &ImageAlgo::channelNameZ );
 		zData = inPlug()->channelDataPlug()->getValue();
 	}
 
 	ConstFloatVectorDataPtr zBackData;
-	bool hasZBack = ImageAlgo::channelExists( channelNames, "ZBack" );
+	bool hasZBack = ImageAlgo::channelExists( channelNames, ImageAlgo::channelNameZBack );
 	if( hasZBack )
 	{
-		channelScope.setChannelName( "ZBack" );
+		channelScope.setChannelName( &ImageAlgo::channelNameZBack );
 		zBackData = inPlug()->channelDataPlug()->getValue();
 	}
 	else
@@ -1052,10 +1074,10 @@ void DeepState::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 			FloatVectorDataPtr sampleWeightsData = new FloatVectorData();
 			std::vector<float> &sampleWeights = sampleWeightsData->writable();
 
-			if( ImageAlgo::channelExists( channelNames, "A" ) )
+			if( ImageAlgo::channelExists( channelNames, ImageAlgo::channelNameA ) )
 			{
 				ImagePlug::ChannelDataScope channelScope( Context::current() );
-				channelScope.setChannelName( "A" );
+				channelScope.setChannelName( &ImageAlgo::channelNameA );
 				ConstFloatVectorDataPtr alphaData = inPlug()->channelDataPlug()->getValue();
 
 				sampleWeights.resize( sampleOffsetsData->readable().back() );
@@ -1134,9 +1156,9 @@ void DeepState::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 		}
 
 		ConstFloatVectorDataPtr alphaData;
-		if( ImageAlgo::channelExists( channelNames, "A" ) )
+		if( ImageAlgo::channelExists( channelNames, ImageAlgo::channelNameA ) )
 		{
-			channelScope.setChannelName( "A" );
+			channelScope.setChannelName( &ImageAlgo::channelNameA );
 			alphaData = inPlug()->channelDataPlug()->getValue();
 		}
 		else

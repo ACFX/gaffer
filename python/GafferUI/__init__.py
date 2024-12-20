@@ -164,13 +164,12 @@ from .VectorDataWidget import VectorDataWidget
 from .PathVectorDataWidget import PathVectorDataWidget
 from .ProgressBar import ProgressBar
 from .SelectionMenu import SelectionMenu
-from .PathFilterWidget import PathFilterWidget
+from .PathFilterWidget import PathFilterWidget, BasicPathFilterWidget
 from .CompoundPathFilterWidget import CompoundPathFilterWidget
 from .InfoPathFilterWidget import InfoPathFilterWidget
 from .MatchPatternPathFilterWidget import MatchPatternPathFilterWidget
 from .FileSequencePathFilterWidget import FileSequencePathFilterWidget
 from .BusyWidget import BusyWidget
-from .NumericSlider import NumericSlider
 from .ColorChooser import ColorChooser
 from .ColorChooserDialogue import ColorChooserDialogue
 from .MessageWidget import MessageWidget, MessageSummaryWidget
@@ -179,12 +178,12 @@ from .MenuButton import MenuButton
 from .MultiSelectionMenu import MultiSelectionMenu
 from .PopupWindow import PopupWindow
 from .ConfirmationDialogue import ConfirmationDialogue
-from .DisplayTransform import DisplayTransform
 from .Divider import Divider
 from . import _Pointer
 from .SplineWidget import SplineWidget
 from .Bookmarks import Bookmarks
 from . import WidgetAlgo
+from .CodeWidget import CodeWidget
 
 # then all the PathPreviewWidgets. note that the order
 # of import controls the order of display.
@@ -234,6 +233,7 @@ from .StandardNodeUI import StandardNodeUI
 from .NodeToolbar import NodeToolbar
 from .StandardNodeToolbar import StandardNodeToolbar
 from .Viewer import Viewer
+from .ColorChooserPlugValueWidget import ColorChooserPlugValueWidget
 from .ColorSwatchPlugValueWidget import ColorSwatchPlugValueWidget
 from .ColorPlugValueWidget import ColorPlugValueWidget
 from .AboutWindow import AboutWindow
@@ -270,12 +270,19 @@ from . import Examples
 from .NameValuePlugValueWidget import NameValuePlugValueWidget
 from .ShufflePlugValueWidget import ShufflePlugValueWidget
 from .ShufflePlugValueWidget import ShufflesPlugValueWidget
+from .BackgroundTaskDialogue import BackgroundTaskDialogue
+from . import AnnotationsUI
+from .TweakPlugValueWidget import TweakPlugValueWidget
+from .PlugPopup import PlugPopup
+from .OptionalValuePlugValueWidget import OptionalValuePlugValueWidget
 
 # and then specific node uis
 
 from . import DependencyNodeUI
 from . import ComputeNodeUI
 from . import RandomUI
+from . import RandomChoiceUI
+from . import ContextQueryUI
 from . import SpreadsheetUI
 from . import ExpressionUI
 from . import BoxUI
@@ -295,6 +302,9 @@ from . import BoxInUI
 from . import BoxOutUI
 from . import NameSwitchUI
 from . import EditScopeUI
+from . import ContextVariableTweaksUI
+from . import CollectUI
+from . import PatternMatchUI
 
 # backwards compatibility
 ## \todo Remove me

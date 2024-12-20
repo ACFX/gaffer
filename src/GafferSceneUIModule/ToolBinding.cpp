@@ -38,12 +38,16 @@
 
 #include "GafferSceneUI/CameraTool.h"
 #include "GafferSceneUI/CropWindowTool.h"
+#include "GafferSceneUI/LightPositionTool.h"
+#include "GafferSceneUI/LightTool.h"
 #include "GafferSceneUI/RotateTool.h"
 #include "GafferSceneUI/ScaleTool.h"
 #include "GafferSceneUI/SceneView.h"
 #include "GafferSceneUI/SelectionTool.h"
 #include "GafferSceneUI/TransformTool.h"
 #include "GafferSceneUI/TranslateTool.h"
+
+#include "GafferSceneUI/Private/VisualiserTool.h"
 
 #include "GafferUI/Gadget.h"
 
@@ -64,19 +68,30 @@ using namespace GafferSceneUI;
 namespace
 {
 
+Gaffer::Box2fPlugPtr cropWindowToolPlugWrapper( CropWindowTool &tool )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return tool.plug();
+}
+
+Gaffer::BoolPlugPtr cropWindowToolEnabledPlugWrapper( CropWindowTool &tool )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return tool.enabledPlug();
+}
+
 struct StatusChangedSlotCaller
 {
-	boost::signals::detail::unusable operator()( boost::python::object slot, CropWindowTool &t )
+	void operator()( boost::python::object slot, CropWindowTool &t )
 	{
 		try
 		{
 			slot( CropWindowToolPtr( &t ) );
 		}
-		catch( const error_already_set &e )
+		catch( const error_already_set & )
 		{
 			IECorePython::ExceptionAlgo::translatePythonException();
 		}
-		return boost::signals::detail::unusable();
 	}
 };
 
@@ -102,19 +117,19 @@ bool selectionEditable( const TransformTool &tool )
 	return tool.selectionEditable();
 }
 
+template<typename T>
 struct SelectionChangedSlotCaller
 {
-	boost::signals::detail::unusable operator()( boost::python::object slot, TransformTool &t )
+	void operator()( boost::python::object slot, T &t )
 	{
 		try
 		{
-			slot( TransformToolPtr( &t ) );
+			slot( typename T::Ptr( &t ) );
 		}
-		catch( const error_already_set &e )
+		catch( const error_already_set & )
 		{
 			IECorePython::ExceptionAlgo::translatePythonException();
 		}
-		return boost::signals::detail::unusable();
 	}
 };
 
@@ -159,9 +174,45 @@ EditScopePtr editScope( const TransformTool::Selection &s )
 
 object acquireTransformEdit( const TransformTool::Selection &s, bool createIfNecessary )
 {
-	IECorePython::ScopedGILRelease gilRelease;
-	auto p = s.acquireTransformEdit( createIfNecessary );
+	std::optional<EditScopeAlgo::TransformEdit> p;
+	{
+		IECorePython::ScopedGILRelease gilRelease;
+		p = s.acquireTransformEdit( createIfNecessary );
+	}
 	return p ? object( *p ) : object();
+}
+
+void registerSelectMode( const std::string &modifierName, object modifier )
+{
+	auto selectModePtr = std::shared_ptr<boost::python::object>(
+		new boost::python::object( modifier ),
+		[]( boost::python::object *o ) {
+			IECorePython::ScopedGILLock gilLock;
+			delete o;
+		}
+	);
+
+	SelectionTool::registerSelectMode(
+		modifierName,
+		[selectModePtr](
+			const GafferScene::ScenePlug *scene,
+			const GafferScene::ScenePlug::ScenePath &path
+		) -> GafferScene::ScenePlug::ScenePath
+		{
+			IECorePython::ScopedGILLock gilLock;
+			try
+			{
+				const std::string pathString = GafferScene::ScenePlug::pathToString( path );
+				return extract<GafferScene::ScenePlug::ScenePath>(
+					(*selectModePtr)( GafferScene::ScenePlugPtr( const_cast<GafferScene::ScenePlug *>( scene ) ), pathString )
+				);
+			}
+			catch( const boost::python::error_already_set & )
+			{
+				ExceptionAlgo::translatePythonException();
+			}
+		}
+	);
 }
 
 } // namespace
@@ -169,11 +220,21 @@ object acquireTransformEdit( const TransformTool::Selection &s, bool createIfNec
 void GafferSceneUIModule::bindTools()
 {
 
-	GafferBindings::NodeClass<SelectionTool>( nullptr, no_init );
+	GafferBindings::NodeClass<SelectionTool>( nullptr, no_init )
+		.def( "registerSelectMode", &registerSelectMode, ( boost::python::arg( "modifierName" ), boost::python::arg( "modifier" ) ) )
+		.staticmethod( "registerSelectMode" )
+		.def( "registeredSelectModes", &SelectionTool::registeredSelectModes )
+		.staticmethod( "registeredSelectModes" )
+		.def( "deregisterSelectMode", &SelectionTool::deregisterSelectMode )
+		.staticmethod( "deregisterSelectMode" )
+	;
 
 	{
 		GafferBindings::NodeClass<CropWindowTool>( nullptr, no_init )
+			.def( init<GafferUI::View *>() )
 			.def( "status", &CropWindowTool::status )
+			.def( "plug", &cropWindowToolPlugWrapper )
+			.def( "enabledPlug", &cropWindowToolEnabledPlugWrapper )
 			.def( "statusChangedSignal", &CropWindowTool::statusChangedSignal, return_internal_reference<1>() )
 		;
 
@@ -215,7 +276,7 @@ void GafferSceneUIModule::bindTools()
 			.value( "World", TransformTool::World )
 		;
 
-		GafferBindings::SignalClass<TransformTool::SelectionChangedSignal, GafferBindings::DefaultSignalCaller<TransformTool::SelectionChangedSignal>, SelectionChangedSlotCaller>( "SelectionChangedSignal" );
+		GafferBindings::SignalClass<TransformTool::SelectionChangedSignal, GafferBindings::DefaultSignalCaller<TransformTool::SelectionChangedSignal>, SelectionChangedSlotCaller<TransformTool>>( "SelectionChangedSignal" );
 	}
 
 	GafferBindings::NodeClass<TranslateTool>( nullptr, no_init )
@@ -234,6 +295,29 @@ void GafferSceneUIModule::bindTools()
 	;
 
 	GafferBindings::NodeClass<CameraTool>( nullptr, no_init )
+		.def( init<SceneView *>() )
+	;
+
+	GafferBindings::NodeClass<LightTool>( nullptr, no_init )
+		.def( init<SceneView *>() )
+	;
+
+	{
+		scope s = GafferBindings::NodeClass<LightPositionTool>( nullptr, no_init )
+			.def( init<SceneView *>() )
+			.def( "positionShadow", &LightPositionTool::positionShadow )
+			.def( "positionHighlight", &LightPositionTool::positionHighlight )
+			.def( "positionAlongNormal", &LightPositionTool::positionAlongNormal )
+		;
+
+		enum_<LightPositionTool::Mode>( "Mode" )
+			.value( "Shadow", LightPositionTool::Mode::Shadow )
+			.value( "Highlight", LightPositionTool::Mode::Highlight )
+			.value( "Diffuse", LightPositionTool::Mode::Diffuse )
+		;
+	}
+
+	GafferBindings::NodeClass<VisualiserTool>( nullptr, no_init )
 		.def( init<SceneView *>() )
 	;
 

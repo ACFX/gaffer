@@ -45,7 +45,7 @@ using namespace IECore;
 using namespace GafferImage;
 using namespace Gaffer;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( FlatToDeep );
+GAFFER_NODE_DEFINE_TYPE( FlatToDeep );
 
 size_t FlatToDeep::g_firstPlugIndex = 0;
 
@@ -67,6 +67,7 @@ FlatToDeep::FlatToDeep( const std::string &name )
 
 
 	// Pass-through the things we don't want to modify.
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
@@ -228,8 +229,8 @@ void FlatToDeep::hashChannelData( const GafferImage::ImagePlug *output, const Ga
 				) );
 			}
 
-			reusedScope.setTileOrigin( tileOrigin );
-			reusedScope.setChannelName( zChannel );
+			reusedScope.setTileOrigin( &tileOrigin );
+			reusedScope.setChannelName( &zChannel );
 			h = inPlug()->channelDataPlug()->hash();
 		}
 	}
@@ -256,16 +257,16 @@ void FlatToDeep::hashChannelData( const GafferImage::ImagePlug *output, const Ga
 						+ zBackChannel + "\" found."
 					) );
 				}
-				reusedScope.setTileOrigin( tileOrigin );
-				reusedScope.setChannelName( zBackChannel );
+				reusedScope.setTileOrigin( &tileOrigin );
+				reusedScope.setChannelName( &zBackChannel );
 				h = inPlug()->channelDataPlug()->hash();
 			}
 			else
 			{
 				thicknessPlug()->hash( h );
 
-				reusedScope.setTileOrigin( tileOrigin );
-				reusedScope.setChannelName( zChannel );
+				reusedScope.setTileOrigin( &tileOrigin );
+				reusedScope.setChannelName( &zChannel );
 				outPlug()->channelDataPlug()->hash(h);
 			}
 		}
@@ -311,8 +312,8 @@ IECore::ConstFloatVectorDataPtr FlatToDeep::computeChannelData( const std::strin
 				) );
 			}
 
-			reusedScope.setTileOrigin( tileOrigin );
-			reusedScope.setChannelName( zChannel );
+			reusedScope.setTileOrigin( &tileOrigin );
+			reusedScope.setChannelName( &zChannel );
 			return inPlug()->channelDataPlug()->getValue();
 		}
 	}
@@ -346,8 +347,8 @@ IECore::ConstFloatVectorDataPtr FlatToDeep::computeChannelData( const std::strin
 					) );
 				}
 
-				reusedScope.setTileOrigin( tileOrigin );
-				reusedScope.setChannelName( zBackChannel );
+				reusedScope.setTileOrigin( &tileOrigin );
+				reusedScope.setChannelName( &zBackChannel );
 				return inPlug()->channelDataPlug()->getValue();
 			}
 			else
@@ -355,8 +356,8 @@ IECore::ConstFloatVectorDataPtr FlatToDeep::computeChannelData( const std::strin
 				// Compute ZBack by combining incoming Z with thickness
 				float thickness = thicknessPlug()->getValue();
 
-				reusedScope.setTileOrigin( tileOrigin );
-				reusedScope.setChannelName( zChannel );
+				reusedScope.setTileOrigin( &tileOrigin );
+				reusedScope.setChannelName( &zChannel );
 				FloatVectorDataPtr resultData = outPlug()->channelDataPlug()->getValue()->copy();
 				vector<float> &result = resultData->writable();
 				for( float &i : result )
@@ -388,4 +389,3 @@ IECore::ConstIntVectorDataPtr FlatToDeep::computeSampleOffsets( const Imath::V2i
 {
 	return ImagePlug::flatTileSampleOffsets();
 }
-

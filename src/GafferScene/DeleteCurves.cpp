@@ -42,14 +42,15 @@
 #include "IECoreScene/CurvesPrimitive.h"
 
 #include "boost/algorithm/string.hpp"
-#include "boost/format.hpp"
+
+#include "fmt/format.h"
 
 using namespace IECore;
 using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeleteCurves );
+GAFFER_NODE_DEFINE_TYPE( DeleteCurves );
 
 size_t DeleteCurves::g_firstPlugIndex = 0;
 
@@ -60,6 +61,7 @@ DeleteCurves::DeleteCurves( const std::string &name )
 
 	addChild( new StringPlug( "curves", Plug::In, "deleteCurves" ) );
 	addChild( new BoolPlug( "invert", Plug::In, false ) );
+	addChild( new BoolPlug( "ignoreMissingVariable", Plug::In, false ) );
 }
 
 DeleteCurves::~DeleteCurves()
@@ -86,12 +88,23 @@ const Gaffer::BoolPlug *DeleteCurves::invertPlug() const
 	return getChild<BoolPlug>( g_firstPlugIndex + 1);
 }
 
+Gaffer::BoolPlug *DeleteCurves::ignoreMissingVariablePlug()
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
+}
+
+const Gaffer::BoolPlug *DeleteCurves::ignoreMissingVariablePlug() const
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
+}
+
 bool DeleteCurves::affectsProcessedObject( const Gaffer::Plug *input ) const
 {
 	return
 		Deformer::affectsProcessedObject( input ) ||
 		input == curvesPlug() ||
-		input == invertPlug()
+		input == invertPlug() ||
+		input == ignoreMissingVariablePlug()
 	;
 }
 
@@ -101,6 +114,7 @@ void DeleteCurves::hashProcessedObject( const ScenePath &path, const Gaffer::Con
 	Deformer::hashProcessedObject( path, context, h );
 	curvesPlug()->hash( h );
 	invertPlug()->hash( h );
+	ignoreMissingVariablePlug()->hash( h );
 }
 
 IECore::ConstObjectPtr DeleteCurves::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const
@@ -113,9 +127,7 @@ IECore::ConstObjectPtr DeleteCurves::computeProcessedObject( const ScenePath &pa
 
 	std::string deletePrimVarName = curvesPlug()->getValue();
 
-	/// \todo Remove. We take values verbatim everywhere else in Gaffer, and I don't
-	/// see any good reason to differ here.
-	if( boost::trim_copy( deletePrimVarName ).empty() )
+	if( deletePrimVarName.empty() )
 	{
 		return inputObject;
 	}
@@ -123,7 +135,12 @@ IECore::ConstObjectPtr DeleteCurves::computeProcessedObject( const ScenePath &pa
 	PrimitiveVariableMap::const_iterator it = curves->variables.find( deletePrimVarName );
 	if (it == curves->variables.end())
 	{
-		throw InvalidArgumentException( boost::str( boost::format( "DeleteCurves : No primitive variable \"%s\" found" ) % deletePrimVarName ) );
+		if( ignoreMissingVariablePlug()->getValue() )
+		{
+			return inputObject;
+		}
+
+		throw InvalidArgumentException( fmt::format( "DeleteCurves : No primitive variable \"{}\" found", deletePrimVarName ) );
 	}
 
 	return CurvesAlgo::deleteCurves(curves, it->second, invertPlug()->getValue());

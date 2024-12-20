@@ -40,8 +40,9 @@
 
 #include "Gaffer/ArrayPlug.h"
 #include "Gaffer/Metadata.h"
+#include "Gaffer/MetadataAlgo.h"
 
-#include "boost/bind.hpp"
+#include "boost/bind/bind.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -65,6 +66,11 @@ class ArrayPlugAdder : public PlugAdder
 		bool canCreateConnection( const Plug *endpoint ) const override
 		{
 			if( !PlugAdder::canCreateConnection( endpoint ) )
+			{
+				return false;
+			}
+
+			if( MetadataAlgo::readOnly( m_plug.get() ) )
 			{
 				return false;
 			}
@@ -111,7 +117,7 @@ struct Registration
 
 	Registration()
 	{
-		NoduleLayout::registerCustomGadget( "GafferUI.ArrayPlugUI.PlugAdder", boost::bind( &create, ::_1 ) );
+		NoduleLayout::registerCustomGadget( "GafferUI.ArrayPlugUI.PlugAdder", &create );
 		Gaffer::Metadata::registerValue(
 			ArrayPlug::staticTypeId(), "noduleLayout:customGadget:addButton:gadgetType",
 			[]( const GraphComponent *plug ) -> ConstDataPtr {
@@ -144,4 +150,3 @@ struct Registration
 Registration g_registration;
 
 } // namespace
-

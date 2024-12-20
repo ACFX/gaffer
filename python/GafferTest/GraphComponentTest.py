@@ -39,7 +39,7 @@ import gc
 import weakref
 import unittest
 import threading
-import six
+import queue
 
 import IECore
 
@@ -54,10 +54,10 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		self.assertEqual( c.getName(), "GraphComponent" )
 		self.assertEqual( c.fullName(), "GraphComponent" )
 
-		def f( c ) :
+		def f( c, oldName ) :
 			GraphComponentTest.name = c.getName()
 
-		con = c.nameChangedSignal().connect( f )
+		con = c.nameChangedSignal().connect( f, scoped = True )
 		GraphComponentTest.name = "xxx"
 		c.setName( "newName" )
 		self.assertEqual( GraphComponentTest.name, "newName" )
@@ -79,7 +79,7 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		self.assertEqual( child1.getName(), "GraphComponent" )
 		self.assertEqual( child1.fullName(), "newName.GraphComponent" )
 
-		con = child2.nameChangedSignal().connect( f )
+		con = child2.nameChangedSignal().connect( f, scoped = True )
 		GraphComponentTest.name = "xxx"
 		c.addChild( child2 )
 		self.assertEqual( child2.getName(), "GraphComponent1" )
@@ -123,8 +123,8 @@ class GraphComponentTest( GafferTest.TestCase ) :
 
 			GraphComponentTest.parenting = ( p, c )
 
-		c1 = child.parentChangedSignal().connect( f )
-		c2 = parent.childAddedSignal().connect( ff )
+		c1 = child.parentChangedSignal().connect( f, scoped = True )
+		c2 = parent.childAddedSignal().connect( ff, scoped = True )
 
 		GraphComponentTest.newParent = None
 		GraphComponentTest.oldParent = None
@@ -138,7 +138,7 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		GraphComponentTest.newParent = "xxx"
 		GraphComponentTest.oldParent = None
 		GraphComponentTest.parenting = None
-		c2 = parent.childRemovedSignal().connect( ff )
+		c2 = parent.childRemovedSignal().connect( ff, scoped = True )
 		parent.removeChild( child )
 		self.assertIsNone( GraphComponentTest.newParent )
 		self.assertTrue( GraphComponentTest.oldParent.isSame( parent ) )
@@ -166,7 +166,7 @@ class GraphComponentTest( GafferTest.TestCase ) :
 
 		p1["c"] = c
 
-		connection = c.parentChangedSignal().connect( f )
+		c.parentChangedSignal().connect( f )
 
 		p2["c"] = c
 
@@ -186,7 +186,7 @@ class GraphComponentTest( GafferTest.TestCase ) :
 			GraphComponentTest.newParent = child.parent()
 			GraphComponentTest.previousParent = previousParent
 
-		c = child.parentChangedSignal().connect( f )
+		child.parentChangedSignal().connect( f )
 
 		GraphComponentTest.newParent = "XXX"
 		GraphComponentTest.previousParent = "XXX"
@@ -216,8 +216,8 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		def f( a, b=None ) :
 			GraphComponentTest.numSignals += 1
 
-		c1 = child.parentChangedSignal().connect( f )
-		c2 = parent.childAddedSignal().connect( f )
+		child.parentChangedSignal().connect( f )
+		parent.childAddedSignal().connect( f )
 
 		parent.addChild( child )
 
@@ -308,7 +308,7 @@ class GraphComponentTest( GafferTest.TestCase ) :
 				q.put( e )
 
 		threads = []
-		q = six.moves.queue.Queue()
+		q = queue.Queue()
 		for i in range( 0, 500 ) :
 
 			t = threading.Thread( target = f, args = (q,) )
@@ -382,12 +382,13 @@ class GraphComponentTest( GafferTest.TestCase ) :
 
 		n = Gaffer.GraphComponent()
 
-		for name in ( "0", "0a", "@A", "a.A", ".", "A:", "a|", "a(" ) :
+		for name in ( "/", "/a", "@A", "a.A", ".", "A!", "a|", "a(" ) :
 			self.assertRaises( Exception, n.setName, name )
 			self.assertRaises( Exception, Gaffer.GraphComponent, name )
 
-		for name in ( "hello", "_1", "brdf_0_degree_refl" ) :
+		for name in ( "hello", "_1", "brdf_0_degree_refl", "3delight" ) :
 			n.setName( name )
+			self.assertEqual( n.getName(), name )
 
 	def testContains( self ) :
 
@@ -535,10 +536,10 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		def f( *args ) :
 			GraphComponentTest.numSignals += 1
 
-		c1 = child.parentChangedSignal().connect( f )
-		c2 = parent.childAddedSignal().connect( f )
-		c3 = parent.childRemovedSignal().connect( f )
-		c4 = child.nameChangedSignal().connect( f )
+		child.parentChangedSignal().connect( f )
+		parent.childAddedSignal().connect( f )
+		parent.childRemovedSignal().connect( f )
+		child.nameChangedSignal().connect( f )
 
 		parent.setChild( "c", child )
 
@@ -733,7 +734,9 @@ class GraphComponentTest( GafferTest.TestCase ) :
 				"GafferDispatch::TaskSwitch",
 				"GafferDispatch::Wedge",
 				"GafferDispatch::FrameMask",
-				"IECorePreview::MessagesData"
+				"IECorePreview::MessagesData",
+				"GafferScene::TweakPlug",
+				"GafferScene::TweaksPlug",
 			] )
 		)
 		self.assertTypeNamesArePrefixed( GafferTest )
@@ -804,8 +807,8 @@ class GraphComponentTest( GafferTest.TestCase ) :
 	def testDescriptiveKeyErrors( self ) :
 
 		g = Gaffer.GraphComponent()
-		six.assertRaisesRegex( self, KeyError, "'a' is not a child of 'GraphComponent'", g.__getitem__, "a" )
-		six.assertRaisesRegex( self, KeyError, "'a' is not a child of 'GraphComponent'", g.__delitem__, "a" )
+		self.assertRaisesRegex( KeyError, "'a' is not a child of 'GraphComponent'", g.__getitem__, "a" )
+		self.assertRaisesRegex( KeyError, "'a' is not a child of 'GraphComponent'", g.__delitem__, "a" )
 
 	def testNoneIsNotAString( self ) :
 
@@ -996,13 +999,13 @@ class GraphComponentTest( GafferTest.TestCase ) :
 
 		g = Gaffer.GraphComponent()
 
-		with six.assertRaisesRegex( self, Exception, r"did not match C\+\+ signature" ) :
+		with self.assertRaisesRegex( Exception, r"did not match C\+\+ signature" ) :
 			g.addChild( None )
 
-		with six.assertRaisesRegex( self, Exception, r"did not match C\+\+ signature" ) :
+		with self.assertRaisesRegex( Exception, r"did not match C\+\+ signature" ) :
 			g.setChild( "x", None )
 
-		with six.assertRaisesRegex( self, Exception, r"did not match C\+\+ signature" ) :
+		with self.assertRaisesRegex( Exception, r"did not match C\+\+ signature" ) :
 			g.removeChild( None )
 
 	def testRanges( self ) :
@@ -1024,6 +1027,185 @@ class GraphComponentTest( GafferTest.TestCase ) :
 			list( Gaffer.GraphComponent.RecursiveRange( g ) ),
 			[ g["c1"], g["c2"], g["c2"]["gc1"], g["c3"], g["c3"]["gc2"], g["c3"]["gc3"] ],
 		)
+
+	def testReorderChildren( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		p = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		c1 = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		c2 = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		c3 = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		c4 = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		script["node"] = Gaffer.Node()
+		script["node"]["p"] = p
+		script["node"]["p"]["c1"] = c1
+		script["node"]["p"]["c2"] = c2
+		script["node"]["p"]["c3"] = c3
+		script["node"]["p"]["c4"] = c4
+
+		mirror = [ c.getName() for c in script["node"]["p"] ]
+		def childrenReordered( parent, oldIndices ) :
+			# Demonstrates how you could maintain a parallel data structure
+			# to keep the same order. For example, a list of widgets in the UI.
+			mirror[:] = [ mirror[i] for i in oldIndices ]
+		script["node"]["p"].childrenReorderedSignal().connect( childrenReordered )
+
+		cs = GafferTest.CapturingSlot( p.childrenReorderedSignal() )
+		with Gaffer.UndoScope( script ) :
+			p.reorderChildren( [ c4, c3, c1, c2 ] )
+
+		self.assertEqual( p.children(), ( c4, c3, c1, c2 ) )
+		self.assertEqual( len( cs ), 1 )
+		self.assertEqual( cs[-1], ( p, [ 3, 2, 0, 1 ] ) )
+		self.assertEqual( mirror, [ c.getName() for c in script["node"]["p"] ] )
+
+		script.undo()
+		self.assertEqual( p.children(), ( c1, c2, c3, c4 ) )
+		self.assertEqual( len( cs ), 2 )
+		self.assertEqual( cs[-1], ( p, [ 2, 3, 1, 0 ] ) )
+		self.assertEqual( mirror, [ c.getName() for c in script["node"]["p"] ] )
+
+		script.redo()
+		self.assertEqual( p.children(), ( c4, c3, c1, c2 ) )
+		self.assertEqual( len( cs ), 3 )
+		self.assertEqual( cs[-1], ( p, [ 3, 2, 0, 1 ] ) )
+		self.assertEqual( mirror, [ c.getName() for c in script["node"]["p"] ] )
+
+		script.undo()
+		self.assertEqual( p.children(), ( c1, c2, c3, c4 ) )
+		self.assertEqual( len( cs ), 4 )
+		self.assertEqual( cs[-1], ( p, [ 2, 3, 1, 0 ] ) )
+		self.assertEqual( mirror, [ c.getName() for c in script["node"]["p"] ] )
+
+	def testReorderChildrenArgumentChecks( self ) :
+
+		p = Gaffer.Plug( "p" )
+		p["c1"] = c1 = Gaffer.Plug()
+		p["c2"] = c2 = Gaffer.Plug()
+		p["c3"] = c3 = Gaffer.Plug()
+
+		with self.assertRaisesRegex( Exception, r"Wrong number of children specified \(2 but should be 3\)" ) :
+			p.reorderChildren( [ c1, c2 ] )
+
+		with self.assertRaisesRegex( Exception, r"Wrong number of children specified \(4 but should be 3\)" ) :
+			p.reorderChildren( [ c1, c2, c3, c1 ] )
+
+		with self.assertRaisesRegex( Exception, 'Child "c2" is in more than one position' ) :
+			p.reorderChildren( [ c1, c2, c2 ] )
+
+	def testNameChangedSignal( self ) :
+
+		s = Gaffer.ScriptNode()
+		g = Gaffer.Node()
+		s.addChild( g )
+
+		names = []
+		def f( g, oldName ) :
+			self.assertIsInstance( oldName, str )
+			names.append( ( oldName, g.getName() ) )
+
+		g.nameChangedSignal().connect( f )
+
+		with Gaffer.UndoScope( s ) :
+			g.setName( "newName" )
+
+		self.assertEqual(
+			names, [
+				( "Node", "newName" ),
+			]
+		)
+
+		s.undo()
+
+		self.assertEqual(
+			names, [
+				( "Node", "newName" ),
+				( "newName", "Node" ),
+			]
+		)
+
+		s.redo()
+
+		self.assertEqual(
+			names, [
+				( "Node", "newName" ),
+				( "newName", "Node" ),
+				( "Node", "newName" ),
+			]
+		)
+
+	def testNameChangedMethod( self ) :
+
+		class NameTracker( Gaffer.Node ) :
+
+			def __init__( self, name = "NameTracker" ) :
+
+				Gaffer.Node.__init__( self, name )
+
+				self.nameChangedSignal().connect( Gaffer.WeakMethod( self.__nameChanged ) )
+
+				self.nameChanges = []
+
+			# Override for virtual method defined by base class.
+			def _nameChanged( self, oldName ) :
+
+				self.nameChanges.append( ( "Method", oldName, self.getName() ) )
+
+			# Connected to public slot.
+			def __nameChanged( self, graphComponent, oldName ) :
+
+				assert( graphComponent.isSame( self ) )
+				self.nameChanges.append( ( "Slot", oldName, self.getName() ) )
+
+		s = Gaffer.ScriptNode()
+		n = NameTracker()
+		s.addChild( n )
+
+		self.assertEqual( n.nameChanges, [] )
+
+		with Gaffer.UndoScope( s ) :
+			n.setName( "newName" )
+
+		self.assertEqual(
+			n.nameChanges, [
+				( "Method", "NameTracker", "newName" ),
+				( "Slot", "NameTracker", "newName" ),
+		] )
+
+		del n.nameChanges[:]
+		s.undo()
+
+		self.assertEqual(
+			n.nameChanges, [
+				( "Method", "newName", "NameTracker" ),
+				( "Slot", "newName", "NameTracker" ),
+		] )
+
+		del n.nameChanges[:]
+		s.redo()
+
+		self.assertEqual(
+			n.nameChanges, [
+				( "Method", "NameTracker", "newName" ),
+				( "Slot", "NameTracker", "newName" ),
+		] )
+
+	def testColonInName( self ) :
+
+		g = Gaffer.GraphComponent( "test:a" )
+		self.assertEqual( g.getName(), "test:a" )
+
+		g.setName( "test:a:b" )
+		self.assertEqual( g.getName(), "test:a:b" )
+
+		p = Gaffer.GraphComponent()
+		p.addChild( g )
+		self.assertIn( "test:a:b", p )
+		self.assertTrue( p["test:a:b"].isSame( g ) )
+		self.assertTrue( p.getChild( "test:a:b" ).isSame( g ) )
+		self.assertTrue( p.descendant( "test:a:b" ).isSame( g ) )
 
 if __name__ == "__main__":
 	unittest.main()

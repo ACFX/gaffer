@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_ATTRIBUTEVISUALISER_H
-#define GAFFERSCENE_ATTRIBUTEVISUALISER_H
+#pragma once
 
 #include "GafferScene/AttributeProcessor.h"
 
@@ -57,10 +56,10 @@ class GAFFERSCENE_API AttributeVisualiser : public AttributeProcessor
 
 	public :
 
-		AttributeVisualiser( const std::string &name=defaultName<AttributeVisualiser>() );
+		explicit AttributeVisualiser( const std::string &name=defaultName<AttributeVisualiser>() );
 		~AttributeVisualiser() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::AttributeVisualiser, AttributeVisualiserTypeId, AttributeProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::AttributeVisualiser, AttributeVisualiserTypeId, AttributeProcessor );
 
 		enum Mode
 		{
@@ -109,5 +108,3 @@ class GAFFERSCENE_API AttributeVisualiser : public AttributeProcessor
 IE_CORE_DECLAREPTR( AttributeVisualiser )
 
 } // namespace GafferScene
-
-#endif // GAFFERSCENE_ATTRIBUTEVISUALISER_H

@@ -92,13 +92,30 @@ class ResizeTest( GafferImageTest.ImageTestCase ) :
 					)
 				)
 
-	# Tests that hashes pass through when the input data is not Flat
-	def testNonFlatThrows( self ) :
+	def testDeep( self ) :
+		representativeDeepImagePath = GafferImageTest.ImageTestCase.imagesPath() / "representativeDeepImage.exr"
+
+		representativeDeepImage = GafferImage.ImageReader()
+		representativeDeepImage["fileName"].setValue( representativeDeepImagePath )
 
 		resize = GafferImage.Resize()
-		resize["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 0 ), imath.V2i( 1024 ) ), 1 ) )
+		resize["in"].setInput( representativeDeepImage["out"] )
+		resize["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 0 ), imath.V2i( 200 ) ), 1 ) )
+		resize["filterDeep"].setValue( True )
 
-		self.assertRaisesDeepNotSupported( resize )
+		flattenAfterResize = GafferImage.DeepToFlat()
+		flattenAfterResize["in"].setInput( resize["out"] )
+		flattenAfterResize['depthMode'].setValue( GafferImage.DeepToFlat.DepthMode.None_ )
+
+		flattenBefore = GafferImage.DeepToFlat()
+		flattenBefore["in"].setInput( representativeDeepImage["out"] )
+		flattenBefore['depthMode'].setValue( GafferImage.DeepToFlat.DepthMode.None_ )
+
+		resizeAfterFlatten = GafferImage.Resize()
+		resizeAfterFlatten["in"].setInput( flattenBefore["out"] )
+		resizeAfterFlatten["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 0 ), imath.V2i( 200 ) ), 1 ) )
+
+		self.assertImagesEqual( flattenAfterResize["out"], resizeAfterFlatten["out"], maxDifference = 3e-5 )
 
 
 	def testFit( self ) :
@@ -182,11 +199,11 @@ class ResizeTest( GafferImageTest.ImageTestCase ) :
 
 	def testFilterAffectsChannelData( self ) :
 
-		 r = GafferImage.Resize()
-		 cs = GafferTest.CapturingSlot( r.plugDirtiedSignal() )
-		 r["filter"].setValue( "gaussian" )
+		r = GafferImage.Resize()
+		cs = GafferTest.CapturingSlot( r.plugDirtiedSignal() )
+		r["filter"].setValue( "gaussian" )
 
-		 self.assertTrue( r["out"]["channelData"] in set( c[0] for c in cs ) )
+		self.assertTrue( r["out"]["channelData"] in set( c[0] for c in cs ) )
 
 	def testSamplerBoundsViolationCrash( self ) :
 
@@ -305,6 +322,36 @@ class ResizeTest( GafferImageTest.ImageTestCase ) :
 						# Distort mode - data window fills output format.
 
 						self.assertEqual( r["out"]["dataWindow"].getValue(), r["out"]["format"].getValue().getDisplayWindow() )
+
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5 )
+	def testSimplestUpscalePerf( self ) :
+		imageReader = GafferImage.ImageReader()
+		imageReader["fileName"].setValue( self.imagesPath() / 'deepMergeReference.exr' )
+
+		r = GafferImage.Resize()
+		r["in"].setInput( imageReader["out"] )
+		r["format"].setValue( GafferImage.Format( 10000, 10000 ) )
+		r["filter"].setValue( 'box' )
+
+		GafferImageTest.processTiles( imageReader["out"] )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			GafferImageTest.processTiles( r["out"] )
+
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5 )
+	def testSimpleUpscalePerf( self ) :
+		imageReader = GafferImage.ImageReader()
+		imageReader["fileName"].setValue( self.imagesPath() / 'deepMergeReference.exr' )
+
+		r = GafferImage.Resize()
+		r["in"].setInput( imageReader["out"] )
+		r["format"].setValue( GafferImage.Format( 10000, 10000 ) )
+		r["filter"].setValue( 'triangle' )
+
+		GafferImageTest.processTiles( imageReader["out"] )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			GafferImageTest.processTiles( r["out"] )
 
 if __name__ == "__main__":
 	unittest.main()

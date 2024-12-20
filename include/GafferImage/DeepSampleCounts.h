@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERIMAGE_SAMPLECOUNTS_H
-#define GAFFERIMAGE_SAMPLECOUNTS_H
+#pragma once
 
 #include "GafferImage/ImageProcessor.h"
 
@@ -49,10 +48,10 @@ class GAFFERIMAGE_API DeepSampleCounts : public ImageProcessor
 
 	public :
 
-		DeepSampleCounts( const std::string &name=defaultName<DeepSampleCounts>() );
+		explicit DeepSampleCounts( const std::string &name=defaultName<DeepSampleCounts>() );
 		~DeepSampleCounts() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::DeepSampleCounts, DeepSampleCountsTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::DeepSampleCounts, DeepSampleCountsTypeId, ImageProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -79,5 +78,3 @@ class GAFFERIMAGE_API DeepSampleCounts : public ImageProcessor
 IE_CORE_DECLAREPTR( DeepSampleCounts )
 
 } // namespace GafferImage
-
-#endif // GAFFERIMAGE_SAMPLECOUNTS_H

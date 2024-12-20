@@ -34,8 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFEROSL_OSLOBJECT_H
-#define GAFFEROSL_OSLOBJECT_H
+#pragma once
 
 #include "GafferOSL/Export.h"
 #include "GafferOSL/OSLCode.h"
@@ -57,10 +56,10 @@ class GAFFEROSL_API OSLObject : public GafferScene::Deformer
 
 	public :
 
-		OSLObject( const std::string &name=defaultName<OSLObject>() );
+		explicit OSLObject( const std::string &name=defaultName<OSLObject>() );
 		~OSLObject() override;
 
-		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferOSL::OSLObject, OSLObjectTypeId, GafferScene::Deformer );
+		GAFFER_NODE_DECLARE_TYPE( GafferOSL::OSLObject, OSLObjectTypeId, GafferScene::Deformer );
 
 		Gaffer::IntPlug *interpolationPlug();
 		const Gaffer::IntPlug *interpolationPlug() const;
@@ -98,7 +97,7 @@ class GAFFEROSL_API OSLObject : public GafferScene::Deformer
 		Gaffer::StringPlug *resampledNamesPlug();
 		const Gaffer::StringPlug *resampledNamesPlug() const;
 
-		ConstShadingEnginePtr shadingEngine( const Gaffer::Context *context ) const;
+		ConstShadingEnginePtr shadingEngine( const Gaffer::Context *context, const IECore::CompoundObject *substitutions ) const;
 
 		GafferOSL::OSLCode *oslCode();
 		const GafferOSL::OSLCode *oslCode() const;
@@ -113,5 +112,3 @@ class GAFFEROSL_API OSLObject : public GafferScene::Deformer
 };
 
 } // namespace GafferOSL
-
-#endif // GAFFEROSL_OSLOBJECT_H

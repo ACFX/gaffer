@@ -204,14 +204,14 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 
 			self["__cameraTweaks"] = GafferScene.CameraTweaks()
 			self["__cameraTweaks"]["in"].setInput( self["__camera"]["out"] )
-			self["__cameraTweaks"]["tweaks"]["projection"] = GafferScene.TweakPlug( "projection", "uv_camera" )
-			self["__cameraTweaks"]["tweaks"]["resolution"] = GafferScene.TweakPlug( "resolution", imath.V2i( 0 ) )
-			self["__cameraTweaks"]["tweaks"]["u_offset"] = GafferScene.TweakPlug( "u_offset", 0.0 )
-			self["__cameraTweaks"]["tweaks"]["v_offset"] = GafferScene.TweakPlug( "v_offset", 0.0 )
-			self["__cameraTweaks"]["tweaks"]["mesh"] = GafferScene.TweakPlug( "mesh", "" )
-			self["__cameraTweaks"]["tweaks"]["uv_set"] = GafferScene.TweakPlug( "uv_set", "" )
-			self["__cameraTweaks"]["tweaks"]["extend_edges"] = GafferScene.TweakPlug( "extend_edges", False )
-			self["__cameraTweaks"]["tweaks"]["offset"] = GafferScene.TweakPlug( "offset", 0.1 )
+			self["__cameraTweaks"]["tweaks"]["projection"] = Gaffer.TweakPlug( "projection", "uv_camera" )
+			self["__cameraTweaks"]["tweaks"]["resolution"] = Gaffer.TweakPlug( "resolution", imath.V2i( 0 ), Gaffer.TweakPlug.Mode.Create )
+			self["__cameraTweaks"]["tweaks"]["u_offset"] = Gaffer.TweakPlug( "u_offset", 0.0, Gaffer.TweakPlug.Mode.Create )
+			self["__cameraTweaks"]["tweaks"]["v_offset"] = Gaffer.TweakPlug( "v_offset", 0.0, Gaffer.TweakPlug.Mode.Create )
+			self["__cameraTweaks"]["tweaks"]["mesh"] = Gaffer.TweakPlug( "mesh", "", Gaffer.TweakPlug.Mode.Create )
+			self["__cameraTweaks"]["tweaks"]["uv_set"] = Gaffer.TweakPlug( "uv_set", "", Gaffer.TweakPlug.Mode.Create )
+			self["__cameraTweaks"]["tweaks"]["extend_edges"] = Gaffer.TweakPlug( "extend_edges", False, Gaffer.TweakPlug.Mode.Create )
+			self["__cameraTweaks"]["tweaks"]["offset"] = Gaffer.TweakPlug( "offset", 0.1, Gaffer.TweakPlug.Mode.Create )
 
 			self["__cameraTweaks"]["tweaks"]["offset"]["value"].setInput( self["normalOffset"] )
 
@@ -248,7 +248,7 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 				udimOffset = i["udim"].value - 1001
 				parent["__cameraTweaks"]["tweaks"]["resolution"]["value"] = imath.V2i( i["resolution"].value )
 				parent["__cameraTweaks"]["tweaks"]["u_offset"]["value"] = -( udimOffset % 10 )
-				parent["__cameraTweaks"]["tweaks"]["v_offset"]["value"] = -( udimOffset / 10 )
+				parent["__cameraTweaks"]["tweaks"]["v_offset"]["value"] = -( udimOffset // 10 )
 				parent["__cameraTweaks"]["tweaks"]["mesh"]["value"] = i["mesh"].value
 				parent["__cameraTweaks"]["tweaks"]["uv_set"]["value"] = parent["uvSet"] if parent["uvSet"] != "uv" else ""
 				"""
@@ -289,6 +289,10 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 		# First, setup python commands which will dispatch a chunk of a render or image tasks as
 		# immediate execution once they reach the farm - this allows us to run multiple tasks in
 		# one farm process.
+		## \todo Ideally we would host LocalDispatcher nodes in our internal graph, instead of
+		# constructing them inside of PythonCommands. That's not currently possible because the
+		# hash for the tasks being dispatched relies on the index file, which doesn't exist
+		# prior to dispatch.
 		self["__RenderDispatcher"] = GafferDispatch.PythonCommand()
 		self["__RenderDispatcher"]["preTasks"][0].setInput( self["__CleanPreTasks"]["out"] )
 		self["__RenderDispatcher"]["command"].setValue( inspect.cleandoc(
@@ -297,7 +301,7 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 			# We need to access frame and "BAKE_WEDGE:index" so that the hash of render varies with the wedge index,
 			# so we might as well print what we're doing
 			IECore.msg( IECore.MessageHandler.Level.Info, "Bake Process", "Dispatching render task index %i for frame %i" % ( context["BAKE_WEDGE:index"], context.getFrame() ) )
-			d = GafferDispatch.LocalDispatcher()
+			d = GafferDispatch.LocalDispatcher( jobPool = GafferDispatch.LocalDispatcher.JobPool() )
 			d.dispatch( [ self.parent()["__bakeDirectoryContext"] ] )
 			"""
 		) )
@@ -309,7 +313,7 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 			# We need to access frame and "BAKE_WEDGE:index" so that the hash of render varies with the wedge index,
 			# so we might as well print what we're doing
 			IECore.msg( IECore.MessageHandler.Level.Info, "Bake Process", "Dispatching image task index %i for frame %i" % ( context["BAKE_WEDGE:index"], context.getFrame() ) )
-			d = GafferDispatch.LocalDispatcher()
+			d = GafferDispatch.LocalDispatcher( jobPool = GafferDispatch.LocalDispatcher.JobPool() )
 			d.dispatch( [ self.parent()["__CleanUpSwitch"] ] )
 			"""
 		) )
@@ -361,7 +365,6 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 		self["__OptionOverrides"]["options"]["resolutionMultiplier"]["enabled"].setValue( True )
 		self["__OptionOverrides"]["options"]["overscan"]["enabled"].setValue( True )
 		self["__OptionOverrides"]["options"]["renderCropWindow"]["enabled"].setValue( True )
-		self["__OptionOverrides"]["options"]["cameraBlur"]["enabled"].setValue( True )
 		self["__OptionOverrides"]["options"]["transformBlur"]["enabled"].setValue( True )
 		self["__OptionOverrides"]["options"]["deformationBlur"]["enabled"].setValue( True )
 
@@ -384,9 +387,8 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 		self["__IndexFileExpression"] = Gaffer.Expression()
 		self["__IndexFileExpression"].setExpression( inspect.cleandoc(
 			"""
-			import os
-			parent["__indexFilePath"] = os.path.join( parent["bakeDirectory"], "BAKE_FILE_INDEX_" +
-				str( context.get("BAKE_WEDGE:index", 0 ) ) + ".####.txt" )
+			import pathlib
+			parent["__indexFilePath"] = pathlib.Path( parent["bakeDirectory"] ) / ( "BAKE_FILE_INDEX_%i.####.txt" % context.get("BAKE_WEDGE:index", 0 ) )
 			"""
 		), "python" )
 
@@ -405,7 +407,7 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 			# Ensure path exists
 			distutils.dir_util.mkpath( variables["bakeDirectory"] )
 
-			f = open( variables["indexFilePath"], "w" )
+			f = open( variables["indexFilePath"], "w", encoding = "utf-8" )
 
 			f.writelines( [ i + "\\n" for i in sorted( variables["fileList"] ) ] )
 			f.close()
@@ -413,7 +415,8 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 			"""
 		) )
 
-		self["__arnoldRender"] = GafferArnold.ArnoldRender()
+		self["__arnoldRender"] = GafferScene.Render()
+		self["__arnoldRender"]["renderer"].setValue( "Arnold" )
 		self["__arnoldRender"]["preTasks"][0].setInput( self["__outputIndexCommand"]["task"] )
 		self["__arnoldRender"]["dispatcher"]["immediate"].setValue( True )
 		self["__arnoldRender"]["in"].setInput( self["__CameraSetup"]["out"] )
@@ -458,7 +461,7 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 		), "python" )
 
 		self["__SizeMaxExpression"] = Gaffer.Expression()
-		self["__SizeMaxExpression"].setExpression( 
+		self["__SizeMaxExpression"].setExpression(
 			"parent.__SizeLoop.next = max( int( parent.__imageSize ), parent.__SizeLoop.previous )",
 			"OSL"
 		)
@@ -588,7 +591,7 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 		self["__ImageSetupExpression"] = Gaffer.Expression()
 		self["__ImageSetupExpression"].setExpression( inspect.cleandoc(
 			"""
-			f = open( parent["__indexFilePath"], "r" )
+			f = open( parent["__indexFilePath"], "r", encoding = "utf-8" )
 
 			fileList = f.read().splitlines()
 			fileDict = {}
@@ -608,4 +611,3 @@ class ArnoldTextureBake( GafferDispatch.TaskNode ) :
 
 
 IECore.registerRunTimeTyped( ArnoldTextureBake, typeName = "GafferArnold::ArnoldTextureBake" )
-

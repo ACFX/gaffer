@@ -36,9 +36,9 @@
 ##########################################################################
 
 import os
+import pathlib
 import unittest
 import datetime
-import six
 import imath
 
 import IECore
@@ -106,10 +106,10 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		with n.parameterModificationContext() as parameters :
 
 			parameters["multiply"].setNumericValue( 10 )
-			parameters["dst"].setTypedValue( self.temporaryDirectory() + "/s.####.exr" )
+			parameters["dst"].setTypedValue( str( self.temporaryDirectory() / "s.####.exr" ) )
 
 		self.assertEqual( n["parameters"]["multiply"].getValue(), 10 )
-		self.assertEqual( n["parameters"]["dst"].getValue(), self.temporaryDirectory() + "/s.####.exr" )
+		self.assertEqual( n["parameters"]["dst"].getValue(), str( self.temporaryDirectory() / "s.####.exr" ) )
 
 		n["parameters"]["multiply"].setValue( 20 )
 		n["parameters"]["dst"].setValue( "lalalal.##.tif" )
@@ -1003,7 +1003,14 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( c )
 
-		self.assertRaises( RuntimeError, ph["parameters"]["driver"].setValue, 10 )
+		# capture the message that will be emitted by the signal handler
+		with IECore.CapturingMessageHandler() as mh :
+			ph["parameters"]["driver"].setValue( 10 )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertTrue( "Ooops!" in mh.messages[0].message )
+		# the value was still set
+		self.assertEqual( ph["parameters"]["driver"].getValue(), 10 )
 
 	def testParameterInvalidWhenParameterChangedRaises( self ) :
 
@@ -1045,11 +1052,13 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph.setParameterised( c )
 
 		with IECore.CapturingMessageHandler() as mh :
-			# We want the original exception to be the visible one.
-			six.assertRaisesRegex( self, RuntimeError, "Ooops!", ph["parameters"]["driver"].setValue, 1 )
-		# And we want the secondary exception to be reported as a message.
-		self.assertEqual( len( mh.messages ), 1 )
+			ph["parameters"]["driver"].setValue( 1 )
+
+		self.assertEqual( len( mh.messages ), 2 )
+		# we want the exception to be reported as a message.
 		self.assertTrue( "Value is not an instance of \"IntData\"" in mh.messages[0].message )
+		# and we want the parameterChanged exception as a message
+		self.assertTrue( "Ooops!" in mh.messages[1].message )
 
 	def testTypeNamePrefixes( self ) :
 
@@ -1060,7 +1069,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 
 		GafferTest.TestCase.setUp( self )
 
-		os.environ["GAFFERCORTEXTEST_CLASS_PATHS"] = os.path.dirname( __file__ ) + "/classes"
+		os.environ["GAFFERCORTEXTEST_CLASS_PATHS"] = str( pathlib.Path( __file__ ).parent / "classes" )
 
 if __name__ == "__main__":
 	unittest.main()

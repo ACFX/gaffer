@@ -45,10 +45,17 @@
 #include "GafferScene/DeleteObject.h"
 #include "GafferScene/DeletePoints.h"
 #include "GafferScene/LightToCamera.h"
+#include "GafferScene/MergeObjects.h"
+#include "GafferScene/MergeMeshes.h"
+#include "GafferScene/MergePoints.h"
+#include "GafferScene/MergeCurves.h"
 #include "GafferScene/MeshDistortion.h"
+#include "GafferScene/MeshNormals.h"
+#include "GafferScene/MeshSegments.h"
 #include "GafferScene/MeshTangents.h"
 #include "GafferScene/MeshToPoints.h"
 #include "GafferScene/MeshType.h"
+#include "GafferScene/MeshTessellate.h"
 #include "GafferScene/ObjectProcessor.h"
 #include "GafferScene/Orientation.h"
 #include "GafferScene/Parameters.h"
@@ -69,11 +76,11 @@ void GafferSceneModule::bindObjectProcessor()
 
 	GafferBindings::DependencyNodeClass<GafferScene::ObjectProcessor>();
 	GafferBindings::DependencyNodeClass<GafferScene::Deformer>();
-	GafferBindings::DependencyNodeClass<GafferScene::DeletePoints>();
 	GafferBindings::DependencyNodeClass<GafferScene::DeleteFaces>();
 	GafferBindings::DependencyNodeClass<GafferScene::DeleteCurves>();
 	GafferBindings::DependencyNodeClass<GafferScene::PointsType>();
 	GafferBindings::DependencyNodeClass<GafferScene::MeshToPoints>();
+	GafferBindings::DependencyNodeClass<GafferScene::MeshSegments>();
 	GafferBindings::DependencyNodeClass<MeshType>();
 	GafferBindings::DependencyNodeClass<GafferScene::LightToCamera>();
 	GafferBindings::DependencyNodeClass<Parameters>();
@@ -83,6 +90,22 @@ void GafferSceneModule::bindObjectProcessor()
 	GafferBindings::DependencyNodeClass<UDIMQuery>();
 	GafferBindings::DependencyNodeClass<Wireframe>();
 	GafferBindings::DependencyNodeClass<CopyPrimitiveVariables>();
+	GafferBindings::DependencyNodeClass<MeshNormals>();
+	GafferBindings::DependencyNodeClass<MeshTessellate>();
+	GafferBindings::DependencyNodeClass<MergeObjects>();
+	GafferBindings::DependencyNodeClass<MergeMeshes>();
+	GafferBindings::DependencyNodeClass<MergePoints>();
+	GafferBindings::DependencyNodeClass<MergeCurves>();
+
+	{
+		scope s = GafferBindings::DependencyNodeClass<GafferScene::DeletePoints>();
+
+		enum_<GafferScene::DeletePoints::SelectionMode>( "SelectionMode" )
+			.value( "VertexPrimitiveVariable", GafferScene::DeletePoints::SelectionMode::VertexPrimitiveVariable )
+			.value( "IdListPrimitiveVariable", GafferScene::DeletePoints::SelectionMode::IdListPrimitiveVariable )
+			.value( "IdList", GafferScene::DeletePoints::SelectionMode::IdList )
+		;
+	}
 
 	{
 		scope s = GafferBindings::DependencyNodeClass<GafferScene::MeshTangents>();
@@ -96,7 +119,10 @@ void GafferSceneModule::bindObjectProcessor()
 	}
 
 	{
-		scope s = GafferBindings::DependencyNodeClass<Orientation>();
+		scope s = GafferBindings::DependencyNodeClass<Orientation>()
+			.def( "normalizedIfNeeded", &Orientation::normalizedIfNeeded )
+			.staticmethod( "normalizedIfNeeded" )
+		;
 
 		enum_<GafferScene::Orientation::Mode>( "Mode" )
 			.value( "Euler", GafferScene::Orientation::Mode::Euler )

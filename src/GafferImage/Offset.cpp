@@ -51,7 +51,7 @@ using namespace GafferImage;
 // Offset node
 //////////////////////////////////////////////////////////////////////////
 
-GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Offset );
+GAFFER_NODE_DEFINE_TYPE( Offset );
 
 size_t Offset::g_firstPlugIndex = 0;
 
@@ -64,6 +64,7 @@ Offset::Offset( const std::string &name )
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );
+	outPlug()->viewNamesPlug()->setInput( inPlug()->viewNamesPlug() );
 	outPlug()->deepPlug()->setInput( inPlug()->deepPlug() );
 }
 
@@ -149,7 +150,8 @@ void Offset::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer
 	const V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
 	if( offset.x % ImagePlug::tileSize() == 0 && offset.y % ImagePlug::tileSize() == 0 )
 	{
-		offsetScope.setTileOrigin( tileOrigin - offset );
+		V2i offsetOrigin = tileOrigin - offset;
+		offsetScope.setTileOrigin( &offsetOrigin );
 		h = inPlug()->channelDataPlug()->hash();
 	}
 	else
@@ -166,14 +168,17 @@ void Offset::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer
 		// Note that two differing output tiles could depend on the same input tile, for
 		// example if the input image is small enough that there is a single valid tile.
 		// Hash in the bound to distinguish the output tiles in this case
-		h.append( inBound );
+		// Work around strange Box2i hashing behaviour in GCC 11, though it would be
+		// preferable to fix this in MurmurHash.
+		h.append( inBound.min );
+		h.append( inBound.max );
 
 		V2i inTileOrigin;
 		for( inTileOrigin.y = ImagePlug::tileOrigin( inBound.min ).y; inTileOrigin.y < inBound.max.y; inTileOrigin.y += ImagePlug::tileSize() )
 		{
 			for( inTileOrigin.x = ImagePlug::tileOrigin( inBound.min ).x; inTileOrigin.x < inBound.max.x; inTileOrigin.x += ImagePlug::tileSize() )
 			{
-				offsetScope.setTileOrigin( inTileOrigin );
+				offsetScope.setTileOrigin( &inTileOrigin );
 				inPlug()->channelDataPlug()->hash( h );
 			}
 		}
@@ -183,7 +188,7 @@ void Offset::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer
 		// For performance reasons, instead of including hashing sampleOffsets for every input tile, we
 		// just include the output sample offsets, which already depends on the input sample offsets and
 		// the deep plug
-		offsetScope.setTileOrigin( tileOrigin );
+		offsetScope.setTileOrigin( &tileOrigin );
 		offsetScope.remove( ImagePlug::channelNameContextName );
 		outPlug()->sampleOffsetsPlug()->hash( h );
 	}
@@ -196,7 +201,8 @@ IECore::ConstFloatVectorDataPtr Offset::computeChannelData( const std::string &c
 	const V2i offset = offsetPlug()->getValue();
 	if( offset.x % ImagePlug::tileSize() == 0 && offset.y % ImagePlug::tileSize() == 0 )
 	{
-		offsetScope.setTileOrigin( tileOrigin - offset );
+		V2i offsetOrigin = tileOrigin - offset;
+		offsetScope.setTileOrigin( &offsetOrigin );
 		return inPlug()->channelDataPlug()->getValue();
 	}
 
@@ -219,7 +225,7 @@ IECore::ConstFloatVectorDataPtr Offset::computeChannelData( const std::string &c
 	{
 		offsetScope.remove( ImagePlug::channelNameContextName );
 		outSampleOffsetsData = outPlug()->sampleOffsetsPlug()->getValue();
-		offsetScope.setChannelName( channelName );
+		offsetScope.setChannelName( &channelName );
 		outData->writable().resize( outSampleOffsetsData->readable().back() );
 	}
 
@@ -230,7 +236,7 @@ IECore::ConstFloatVectorDataPtr Offset::computeChannelData( const std::string &c
 	{
 		for( inTileOrigin.x = ImagePlug::tileOrigin( inBound.min ).x; inTileOrigin.x < inBound.max.x; inTileOrigin.x += ImagePlug::tileSize() )
 		{
-			offsetScope.setTileOrigin( inTileOrigin );
+			offsetScope.setTileOrigin( &inTileOrigin );
 			ConstFloatVectorDataPtr inData = inPlug()->channelDataPlug()->getValue();
 			const float *in = &inData->readable().front();
 
@@ -260,7 +266,7 @@ IECore::ConstFloatVectorDataPtr Offset::computeChannelData( const std::string &c
 			{
 				offsetScope.remove( ImagePlug::channelNameContextName );
 				ConstIntVectorDataPtr inSampleOffsetsData = inPlug()->sampleOffsetsPlug()->getValue();
-				offsetScope.setChannelName( channelName );
+				offsetScope.setChannelName( &channelName );
 				const std::vector<int> &inSampleOffsets = inSampleOffsetsData->readable();
 				const std::vector<int> &outSampleOffsets = outSampleOffsetsData->readable();
 				for( V2i inScanlineOrigin = inRegion.min; inScanlineOrigin.y < inRegion.max.y; inScanlineOrigin.y++ )
@@ -302,7 +308,8 @@ void Offset::hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaff
 	const V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
 	if( offset.x % ImagePlug::tileSize() == 0 && offset.y % ImagePlug::tileSize() == 0 )
 	{
-		offsetScope.setTileOrigin( tileOrigin - offset );
+		V2i offsetOrigin = tileOrigin - offset;
+		offsetScope.setTileOrigin( &offsetOrigin );
 		h = inPlug()->sampleOffsetsPlug()->hash();
 	}
 	else
@@ -321,14 +328,17 @@ void Offset::hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaff
 		// Note that two differing output tiles could depend on the same input tile, for
 		// example if the input image is small enough that there is a single valid tile.
 		// Hash in the bound to distinguish the output tiles in this case
-		h.append( inBound );
+		// Work around strange Box2i hashing behaviour in GCC 11, though it would be
+		// preferable to fix this in MurmurHash.
+		h.append( inBound.min );
+		h.append( inBound.max );
 
 		V2i inTileOrigin;
 		for( inTileOrigin.y = ImagePlug::tileOrigin( inBound.min ).y; inTileOrigin.y < inBound.max.y; inTileOrigin.y += ImagePlug::tileSize() )
 		{
 			for( inTileOrigin.x = ImagePlug::tileOrigin( inBound.min ).x; inTileOrigin.x < inBound.max.x; inTileOrigin.x += ImagePlug::tileSize() )
 			{
-				offsetScope.setTileOrigin( inTileOrigin );
+				offsetScope.setTileOrigin( &inTileOrigin );
 				inPlug()->sampleOffsetsPlug()->hash( h );
 			}
 		}
@@ -349,7 +359,8 @@ IECore::ConstIntVectorDataPtr Offset::computeSampleOffsets( const Imath::V2i &ti
 	const V2i offset = offsetPlug()->getValue();
 	if( ( offset.x % ImagePlug::tileSize() == 0 && offset.y % ImagePlug::tileSize() == 0 ) )
 	{
-		offsetScope.setTileOrigin( tileOrigin - offset );
+		V2i offsetOrigin = tileOrigin - offset;
+		offsetScope.setTileOrigin( &offsetOrigin );
 		return inPlug()->sampleOffsetsPlug()->getValue();
 	}
 
@@ -370,7 +381,7 @@ IECore::ConstIntVectorDataPtr Offset::computeSampleOffsets( const Imath::V2i &ti
 	{
 		for( inTileOrigin.x = ImagePlug::tileOrigin( inBound.min ).x; inTileOrigin.x < inBound.max.x; inTileOrigin.x += ImagePlug::tileSize() )
 		{
-			offsetScope.setTileOrigin( inTileOrigin );
+			offsetScope.setTileOrigin( &inTileOrigin );
 			ConstIntVectorDataPtr inData = inPlug()->sampleOffsetsPlug()->getValue();
 			const std::vector<int> &in = inData->readable();
 
